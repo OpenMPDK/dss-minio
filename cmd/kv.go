@@ -98,6 +98,8 @@ static int minio_nkv_delete(struct minio_nkv_handle *handle, void *key, int keyL
   return result;
 }
 
+#define LIST_KEYS_COUNT 1000
+
 static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int prefixLen, void *buf, int bufLen, int *numKeys, void **iter_context) {
   nkv_result result;
   nkv_io_context ctx;
@@ -106,32 +108,27 @@ static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int pre
   ctx.network_path_hash = handle->network_path_hash;
   ctx.ks_id = 0;
 
-  uint32_t count = 100;
-  uint32_t max_keys = count;
-  nkv_key* keys_out = (nkv_key*) malloc (sizeof(nkv_key) * count);
-  memset(keys_out, 0, (sizeof(nkv_key) * count));
-  for (int iter = 0; iter < count; iter++) {
-    keys_out[iter].key = malloc(256);
-    memset(keys_out[iter].key, 0, 256);
+  uint32_t max_keys = LIST_KEYS_COUNT;
+  nkv_key keys_out[LIST_KEYS_COUNT];
+  char keys[LIST_KEYS_COUNT][256];
+  for (int iter = 0; iter < LIST_KEYS_COUNT; iter++) {
+    memset(&keys_out[iter], 0, sizeof(nkv_key));
+    memset(keys[iter], 0, 256);
+    keys_out[iter].key = keys[iter];
     keys_out[iter].length = 256;
   }
-  char *prefixStr = malloc(257);
-  memset(prefixStr, 0, 256);
+  char prefixStr[257];
+  memset(prefixStr, 0, 257);
   strncpy(prefixStr, prefix, prefixLen);
-  // printf("List on %s\n", prefixStr);
   result = nkv_indexing_list_keys(handle->nkv_handle, &ctx, NULL, prefixStr, "/", NULL, &max_keys, keys_out, iter_context);
   *numKeys = (int)max_keys;
   char *bufChar = (char *) buf;
   for (int iter = 0; iter < *numKeys; iter++) {
-    // printf("C: %s\n",(char *)keys_out[iter].key);
-    strcpy(bufChar, keys_out[iter].key);
+    strncpy(bufChar, keys_out[iter].key, keys_out[iter].length);
     bufChar += keys_out[iter].length;
+    *bufChar = 0;
     bufChar++;
   }
-  for (int iter = 0; iter < count; iter++) {
-    free(keys_out[iter].key);
-  }
-  free(keys_out);
   return result;
 }
 
@@ -206,6 +203,23 @@ static int minio_nkv_delete_async(struct minio_nkv_handle *handle, void *id, voi
 
   nkv_result result = nkv_delete_kvp_async(handle->nkv_handle, &ctx, &nkvkey, pfn);
   return result;
+}
+
+static int minio_nkv_diskinfo(struct minio_nkv_handle *handle, long long *total, long long *used) {
+  nkv_mgmt_context mg_ctx = {0};
+  mg_ctx.is_pass_through = 1;
+
+  mg_ctx.container_hash = handle->container_hash;
+  mg_ctx.network_path_hash = handle->network_path_hash;
+
+  nkv_path_stat p_stat = {0};
+  nkv_result stat = nkv_get_path_stat (handle->nkv_handle, &mg_ctx, &p_stat);
+
+  if (stat == NKV_SUCCESS) {
+    *total = (long long)p_stat.path_storage_capacity_in_bytes;
+    *used = (long long)p_stat.path_storage_usage_in_bytes;
+  }
+  return stat;
 }
 
 */
@@ -715,7 +729,7 @@ func (k *KV) Delete(keyStr string) error {
 	return nil
 }
 
-func (k *KV) List(keyStr string, buf []byte) ([]string, error) {
+func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 	if kvSerialize {
 		kvMu.Lock()
 		defer kvMu.Unlock()
@@ -730,6 +744,7 @@ func (k *KV) List(keyStr string, buf []byte) ([]string, error) {
 	var entries []string
 	var iterContext unsafe.Pointer
 	for {
+		buf := b
 		cstatus := C.minio_nkv_list(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), unsafe.Pointer(&buf[0]), C.int(len(buf)), &numKeysC, &iterContext)
 		if cstatus != 0 && cstatus != 0x01F {
 			return nil, errFileNotFound
@@ -749,4 +764,22 @@ func (k *KV) List(keyStr string, buf []byte) ([]string, error) {
 		}
 	}
 	return entries, nil
+}
+
+func (k *KV) DiskInfo() (DiskInfo, error) {
+	var total C.longlong
+	var used C.longlong
+
+	status := C.minio_nkv_diskinfo(&k.handle, &total, &used)
+
+	if status != 0 {
+		return DiskInfo{}, errDiskNotFound
+	}
+
+	return DiskInfo{
+		Total:    uint64(total),
+		Free:     uint64(total - used),
+		Used:     uint64(used),
+		RootDisk: false,
+	}, nil
 }

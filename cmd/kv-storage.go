@@ -29,7 +29,26 @@ type KVStorage struct {
 	volumesMu sync.RWMutex
 }
 
+var kvStorageCache = make(map[string]StorageAPI)
+var kvStorageCacheMu sync.Mutex
+
 func newPosix(path string) (StorageAPI, error) {
+	kvStorageCacheMu.Lock()
+	defer kvStorageCacheMu.Unlock()
+
+	cache := kvStorageCache[path]
+	if cache != nil {
+		return cache, nil
+	}
+	cache, err := newKVPosix(path)
+	if err != nil {
+		return nil, err
+	}
+	kvStorageCache[path] = cache
+	return cache, nil
+}
+
+func newKVPosix(path string) (StorageAPI, error) {
 	kvPath := path
 	path = strings.TrimPrefix(path, "/nkv/")
 
@@ -83,10 +102,7 @@ func (k *KVStorage) Close() error {
 }
 
 func (k *KVStorage) DiskInfo() (info DiskInfo, err error) {
-	return DiskInfo{
-		Total: 3 * 1024 * 1024 * 1024 * 1024,
-		Free:  3 * 1024 * 1024 * 1024 * 1024,
-	}, nil
+	return k.kv.DiskInfo()
 }
 
 func (k *KVStorage) loadVolumes() (*kvVolumes, error) {
@@ -190,6 +206,13 @@ func (k *KVStorage) DeleteVol(volume string) (err error) {
 	}
 	if foundIndex == -1 {
 		return errVolumeNotFound
+	}
+	entries, err := k.ListDir(volume, "", -1)
+	if err != nil {
+		return err
+	}
+	if len(entries) > 0 {
+		return errVolumeNotEmpty
 	}
 	volumes.VolInfos = append(volumes.VolInfos[:foundIndex], volumes.VolInfos[foundIndex+1:]...)
 
@@ -415,7 +438,8 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 				w.CloseWithError(err)
 				return
 			}
-			w.Write(data[blockOffset:blockLength])
+
+			w.Write(data[blockOffset : blockOffset+blockLength])
 		}
 		w.Close()
 	}()
@@ -539,7 +563,12 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
 		defer kvValuePool.Put(bufp)
 
 		buf, err = k.kv.Get(pathJoin(volume, filePath), *bufp)
-		return buf, err
+		if err != nil {
+			return nil, err
+		}
+		newBuf := make([]byte, len(buf))
+		copy(newBuf, buf)
+		return newBuf, err
 	}
 	fi, err := k.StatFile(volume, filePath)
 	if err != nil {
