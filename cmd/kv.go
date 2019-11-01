@@ -82,6 +82,7 @@ static int minio_nkv_get(struct minio_nkv_handle *handle, void *key, int keyLen,
   nkv_value nkvvalue = {value, valueLen, 0};
   result = nkv_retrieve_kvp(handle->nkv_handle, &ctx, &nkvkey, &option, &nkvvalue);
   *actual_length = nkvvalue.actual_length;
+  //printf("####NKV retrieve call success for key = %s, actual_len = %u ####\n", (char*)key, *actual_length);
   return result;
 }
 
@@ -98,7 +99,7 @@ static int minio_nkv_delete(struct minio_nkv_handle *handle, void *key, int keyL
   return result;
 }
 
-#define LIST_KEYS_COUNT 1000
+#define LIST_KEYS_COUNT 10000
 
 static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int prefixLen, void *buf, int bufLen, int *numKeys, void **iter_context) {
   nkv_result result;
@@ -242,6 +243,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/minio/cmd/logger"
+        "sync/atomic"
 )
 
 //export minio_nkv_callback
@@ -323,14 +325,61 @@ type KV struct {
 	kvHashSumMapMu sync.RWMutex
 }
 
-var kvValuePool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, kvMaxValueSize)
-		return &b
-	},
+type kvValuePoolType struct {
+       *sync.Pool
+       count uint64
+       sync.Mutex
 }
 
-const kvKeyLength = 200
+func (k *kvValuePoolType) Get() interface{} {
+       //k.Lock()
+       //k.count++
+       //k.Unlock()
+       atomic.AddUint64(&k.count, 1) 
+       return k.Pool.Get()
+}
+
+func (k *kvValuePoolType) Put(x interface{}) {
+       //k.Lock()
+       //k.count--
+       //k.Unlock()
+       atomic.AddUint64(&k.count, ^uint64(0))
+       k.Pool.Put(x)
+}
+
+func (k *kvValuePoolType) PrintCount() {
+       //k.Lock()
+       //count := k.count
+       //k.Unlock()
+       fmt.Println("Pool count", k.count)
+}
+
+var kvValuePool = &kvValuePoolType{
+       Pool: &sync.Pool{
+               New: func() interface{} {
+                       b := make([]byte, kvMaxValueSize)
+                       return &b
+               },
+        },
+ }
+
+
+//var kvValuePool = sync.Pool{
+//	New: func() interface{} {
+//		b := make([]byte, kvMaxValueSize)
+//		return &b
+//	},
+//}
+
+var kvValuePoolMeta = sync.Pool{
+        New: func() interface{} {
+                b := make([]byte, 512*1024)
+                return &b
+        },
+}
+
+
+const kvKeyLength = 255
 
 var kvMu sync.Mutex
 var kvSerialize = os.Getenv("MINIO_NKV_SERIALIZE") != ""
@@ -730,6 +779,7 @@ func (k *KV) Delete(keyStr string) error {
 }
 
 func (k *KV) List(keyStr string, b []byte) ([]string, error) {
+        //fmt.Println("##### In List call #####")
 	if kvSerialize {
 		kvMu.Lock()
 		defer kvMu.Unlock()
@@ -750,6 +800,7 @@ func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 			return nil, errFileNotFound
 		}
 		numKeys = int(numKeysC)
+                //fmt.Println("Num list entries = ", numKeys)
 		for i := 0; i < numKeys; i++ {
 			index := bytes.IndexByte(buf, '\x00')
 			if index == -1 {
