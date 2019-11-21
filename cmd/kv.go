@@ -373,11 +373,17 @@ var kvValuePool = &kvValuePoolType{
 
 var kvValuePoolMeta = sync.Pool{
         New: func() interface{} {
-                b := make([]byte, 512*1024)
+                b := make([]byte, 4096)
                 return &b
         },
 }
 
+var kvValuePoolList = sync.Pool{
+        New: func() interface{} {
+                b := make([]byte, 131072)
+                return &b
+        },
+}
 
 const kvKeyLength = 255
 

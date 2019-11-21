@@ -154,7 +154,9 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
                   mult += 1
                 }
                 //fmt.Println("### Chunk len = ", chunk_len)
-                b.r_b = make([]byte, chunk_len)
+                if (mult != b.buf_m) {
+                  //b.r_b = make([]byte, chunk_len)
+                }
                 b.r_offset = 0
                 b.totalRead = 0
                 b.r_id = atomic.AddInt64(&reader_uuid, 1)
@@ -176,59 +178,57 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		return 0, errUnexpected
 	}
 	b.h.Reset()
-
-        if ((int(b.r_offset) == b.l_c_s) && (b.totalRead != b.last_till)) {
-          //fmt.Println("### Before ReadAll ### ", b.r_id, b.r_offset, int64(len(b.r_b)), b.totalRead, b.tillOffset)
-          //b.r_b, err = ioutil.ReadAll(b.rc)
-          b.l_c_s, err = io.ReadFull(b.rc, b.r_b)
-          if err != nil {
-            //fmt.Println("??? Got error while reading from b.rc???", b.l_c_s, err)
-          }
-          for (int64(len(b.r_b)) == 0) {
- 
-            fmt.Println("### ReadAll ### ", b.r_id, offset, b.r_offset, b.totalRead, int64(len(buf)), b.currOffset, b.tillOffset)
+        if (b.r_b != nil) {
+          if ((int(b.r_offset) == b.l_c_s) && (b.totalRead != b.last_till)) {
+            //fmt.Println("### Before ReadAll ### ", b.r_id, b.r_offset, int64(len(b.r_b)), b.totalRead, b.tillOffset)
             //b.r_b, err = ioutil.ReadAll(b.rc)
             b.l_c_s, err = io.ReadFull(b.rc, b.r_b)
             if err != nil {
-              fmt.Println("??? Got error while reading from b.rc???")
-              return 0, errUnexpected
+              //fmt.Println("??? Got error while reading from b.rc???", b.l_c_s, err)
             }
+            for (int64(len(b.r_b)) == 0) {
+ 
+              fmt.Println("### ReadAll ### ", b.r_id, offset, b.r_offset, b.totalRead, int64(len(buf)), b.currOffset, b.tillOffset)
+              //b.r_b, err = ioutil.ReadAll(b.rc)
+              b.l_c_s, err = io.ReadFull(b.rc, b.r_b)
+              if err != nil {
+                fmt.Println("??? Got error while reading from b.rc???")
+                return 0, errUnexpected
+              }
             
+            }
+            b.totalRead += int64(b.l_c_s)
+            b.r_offset = 0
+            //fmt.Println("### After ReadAll ### ", b.r_id, b.r_offset, b.l_c_s, int64(len(b.r_b)), int64(len(buf)), b.totalRead, b.tillOffset)
+          } else {
+            //fmt.Println("### Still consuming old read ### ", b.r_id, b.r_offset, b.l_c_s, int64(len(b.r_b)), int64(len(buf)), b.totalRead, b.tillOffset)
           }
-          //b.totalRead += int64(len(b.r_b))
-          b.totalRead += int64(b.l_c_s)
-          b.r_offset = 0
-          //fmt.Println("### After ReadAll ### ", b.r_id, b.r_offset, b.l_c_s, int64(len(b.r_b)), int64(len(buf)), b.totalRead, b.tillOffset)
-        } else {
-          //fmt.Println("### Still consuming old read ### ", b.r_id, b.r_offset, b.l_c_s, int64(len(b.r_b)), int64(len(buf)), b.totalRead, b.tillOffset)
-        }
-        if (b.r_offset > int64(len(b.r_b))) {
-           fmt.Println("### copy1 ### ", b.r_id, b.r_offset, int64(len(b.r_b)))
-        }
-        copy (b.hashBytes, b.r_b[b.r_offset:])
-        //b.hashBytes = b.r_b[b.r_offset:32]
+          if (b.r_offset > int64(len(b.r_b))) {
+            fmt.Println("### copy1 ### ", b.r_id, b.r_offset, int64(len(b.r_b)))
+          }
+          copy (b.hashBytes, b.r_b[b.r_offset:])
         
-        //fmt.Println("### slice point ### ", b.r_id, b.r_offset, int64(len(buf)), int64(len(b.r_b)), hex.EncodeToString(b.hashBytes))
-        //fmt.Println("### copy1 ### ", b.r_id, b.r_offset, int64(len(b.hashBytes)), hex.EncodeToString(b.hashBytes))
-        b.r_offset += int64(len(b.hashBytes))
+          b.r_offset += int64(len(b.hashBytes))
 
-        if (b.r_offset > int64(len(b.r_b))) {
-           fmt.Println("### copy2 ### ", b.r_id, b.r_offset, int64(len(b.r_b)))
-        }        
-        copy(buf, b.r_b[b.r_offset:])
-        //fmt.Println("### copy2 ### ", b.r_id, b.r_offset, int64(len(buf)), hex.EncodeToString(buf))
-        b.r_offset += int64(len(buf)) 
+          if (b.r_offset > int64(len(b.r_b))) {
+            fmt.Println("### copy2 ### ", b.r_id, b.r_offset, int64(len(b.r_b)))
+          }        
+          copy(buf, b.r_b[b.r_offset:])
+          b.r_offset += int64(len(buf)) 
 
-	//_, err = io.ReadFull(b.rc, b.hashBytes)
-	//if err != nil {
-	//	logger.LogIf(context.Background(), err)
-	//	return 0, err
-	//}
-	//_, err = io.ReadFull(b.rc, buf)
-	//if err != nil {
-	//	logger.LogIf(context.Background(), err)
-	//	return 0, err
-	//}
+        } else {
+          //fmt.Println("### No copy ### ", int64(len(buf)), int64(len(b.hashBytes)))
+	  _, err = io.ReadFull(b.rc, b.hashBytes)
+	  if err != nil {
+	    logger.LogIf(context.Background(), err)
+	    return 0, err
+	  }
+	  _, err = io.ReadFull(b.rc, buf)
+	  if err != nil {
+	    logger.LogIf(context.Background(), err)
+	    return 0, err
+	  }
+        } 
 
 	b.h.Write(buf)
 
