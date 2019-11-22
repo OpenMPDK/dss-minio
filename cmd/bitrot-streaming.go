@@ -25,7 +25,7 @@ import (
         //"io/ioutil"
         "fmt"
         "os"
-        "sync/atomic"
+        //"sync/atomic"
         //"runtime"
 	"github.com/minio/minio/cmd/logger"
         "strconv"
@@ -143,23 +143,23 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		// For the first ReadAt() call we need to open the stream for reading.
                 b.r_b = nil
                 //runtime.GC()
-                if (b.totalRead != b.last_till) {
-                  fmt.Println("### Read not finished !! ", b.totalRead, b.last_till)
-                }
-                chunk_len := len(buf) + len(b.hashBytes)
-                mult := b.buf_m
-                for (chunk_len < b.buffer_th) {
+                //if (b.totalRead != b.last_till) {
+                  //fmt.Println("### Read not finished !! ", b.totalRead, b.last_till)
+                //}
+                //chunk_len := len(buf) + len(b.hashBytes)
+                //mult := b.buf_m
+                //for (chunk_len < b.buffer_th) {
                  
-                  chunk_len *= mult
-                  mult += 1
-                }
+                  //chunk_len *= mult
+                  //mult += 1
+                //}
                 //fmt.Println("### Chunk len = ", chunk_len)
-                if (mult != b.buf_m) {
+                //if (mult != b.buf_m) {
                   //b.r_b = make([]byte, chunk_len)
-                }
+                //}
                 b.r_offset = 0
                 b.totalRead = 0
-                b.r_id = atomic.AddInt64(&reader_uuid, 1)
+                //b.r_id = atomic.AddInt64(&reader_uuid, 1)
 		b.currOffset = offset
 		streamOffset := (offset/b.shardSize)*int64(b.h.Size()) + offset
                 b.last_till = b.tillOffset-streamOffset
@@ -249,7 +249,9 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
         //if ((readSofar != readLen) && (readLen != 0)) {
           //fmt.Println("### Read pending ###", offset, int64(len(buf)), int64(len(b.hashBytes)), readLen, b.currOffset, b.tillOffset)
         //}
-        //if (b.totalRead == b.tillOffset) {
+        //if (b.totalRead >= b.tillOffset) {
+          //fmt.Println("###Closing the stream..")
+          //b.rc.Close()
         //  b.num_opened -= 1
         //  fmt.Println("### Clearing the stream ### ", offset, int64(len(buf)), b.currOffset, b.totalRead, b.num_opened)
         //  _, err_r:= ioutil.ReadAll(b.rc)

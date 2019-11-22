@@ -441,6 +441,7 @@ func (k *KVStorage) CreateFile(volume, filePath string, size int64, reader io.Re
 }
 
 type Reader struct {
+        key_name string
 	valid_data []byte
         pool_buf *[]byte
         entry KVNSEntry
@@ -453,10 +454,11 @@ type Reader struct {
         endIndex int64
         kvMaxValueSize int64 
         index int64
+        is_freed bool
         
 }
 
-func NewReader_kv(k *KVStorage, entry KVNSEntry, offset, length int64) *Reader {
+func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int64) *Reader {
         kvMaxValueSize := int64(kvMaxValueSize)
         startIndex := offset / kvMaxValueSize
         endIndex := (offset + length) / kvMaxValueSize
@@ -485,7 +487,18 @@ func NewReader_kv(k *KVStorage, entry KVNSEntry, offset, length int64) *Reader {
         }
 
         index++
-	return &Reader{data_b[blockOffset : blockOffset+blockLength], pool_buf, entry, k, 0, 0, offset, length, startIndex, endIndex, kvMaxValueSize, index}
+        //fmt.Println("###Reader.open called, ", key)
+	return &Reader{key, data_b[blockOffset : blockOffset+blockLength], pool_buf, entry, k, 0, 0, offset, length, startIndex, endIndex, kvMaxValueSize, index, false}
+}
+
+func (r *Reader) Close() error {
+  //fmt.Println("###Reader.close called, ", r.key_name, r.is_freed)
+  if (!r.is_freed) {
+    kvValuePool.Put(r.pool_buf)
+    r.is_freed = true
+  }
+
+  return nil
 }
 
 
@@ -504,33 +517,60 @@ func (r *Reader) Read(p []byte) (n int, err error) {
           //r.total_read += int64(bytes_copied)
         //}
 
-	if r.readIndex >= int64(len(r.valid_data)) {
-          if (r.total_read >= r.length) {
-            //fmt.Println("Returning EOF", r.total_read, r.readIndex, r.length, int64(len(p)))
-	    err = io.EOF
-            kvValuePool.Put(r.pool_buf)
-	    return
-          } else {
-            read_next_chunk = true
-          }
+        if (r.total_read >= r.length) {
+          //fmt.Println("Returning EOF", r.total_read, r.readIndex, r.length, int64(len(p)))
+	  err = io.EOF
+          //if (!r.is_freed) {
+            //kvValuePool.Put(r.pool_buf)
+            //r.is_freed = true
+          //}
+	  return
+        } else {
+            if r.readIndex >= int64(len(r.valid_data)) {
+              read_next_chunk = true
+            } else {
+              remaining := int64(len(r.valid_data)) - r.readIndex
+              if ((remaining > 0) && (int64(len(p)) > remaining)) {
+                //fmt.Println("Remaining = ", remaining)
+                bytes_copied = copy(p[:remaining], r.valid_data[r.readIndex:])
+                r.readIndex += int64(bytes_copied)
+                r.total_read += int64(bytes_copied)
+                n = bytes_copied
+                if (r.total_read < r.length) {
+                  read_next_chunk = true
+                } else {
+                  //fmt.Println("Done reading, returning", r.total_read, r.length, r.is_freed)
+                  //if (!r.is_freed) {
+                    //kvValuePool.Put(r.pool_buf)
+                    //r.is_freed = true
+                  //}
+                  return
+
+                }
+              }
+
+            }
         }
 
-        remaining := int64(len(r.valid_data)) - r.readIndex
-        if ((remaining > 0) && (int64(len(p)) > remaining)) {
+        //remaining := int64(len(r.valid_data)) - r.readIndex
+        //if ((remaining > 0) && (int64(len(p)) > remaining)) {
           //fmt.Println("Remaining = ", remaining)
-          bytes_copied = copy(p[:remaining], r.valid_data[r.readIndex:])
-          r.readIndex += int64(bytes_copied)
-          r.total_read += int64(bytes_copied)
-          n = bytes_copied
-          read_next_chunk = true
-        }
+          //bytes_copied = copy(p[:remaining], r.valid_data[r.readIndex:])
+          //r.readIndex += int64(bytes_copied)
+          //r.total_read += int64(bytes_copied)
+          //n = bytes_copied
+          //read_next_chunk = true
+        //}
        
         if (read_next_chunk) {
           //Read the next chunk from KV
           if (r.index > r.endIndex) {
-            //fmt.Println("Returning EOF from index", r.index, r.endIndex, r.total_read, r.length)
+            fmt.Println("Returning EOF from index", r.index, r.endIndex, r.total_read, r.length)
             //err = io.EOF
-            //kvValuePool.Put(r.pool_buf)
+            //if (!r.is_freed) {
+              //kvValuePool.Put(r.pool_buf)
+              //r.is_freed = true
+            //}
             return
           }
           var blockOffset, blockLength int64
@@ -552,10 +592,16 @@ func (r *Reader) Read(p []byte) (n int, err error) {
           data_b, err := r.k.kv.Get(r.k.DataKey(id), *r.pool_buf)
           if err != nil {
             //w.CloseWithError(err)
-            //return
+            fmt.Println("###Error during kv get")
+            
+            return n, err
           }
           r.index++
           r.valid_data = data_b[blockOffset : blockOffset+blockLength]
+          if (len(r.valid_data) == 0) {
+            fmt.Println("##### KV GET failed with 0 length object, key = ", r.k.DataKey(id))
+            os.Exit(1)            
+          }
           //r.total_read += r.readIndex
           r.readIndex = 0
           //fmt.Println("Buffer refreshed, ", r.total_read, r.readIndex, r.length, n, int64(len(p)), int64(len(r.valid_data)))
@@ -565,8 +611,9 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	r.readIndex += int64(n)
         r.total_read += int64(n)
         n += bytes_copied
-        if (r.total_read >= r.length) {
-          kvValuePool.Put(r.pool_buf)
+        if ((r.total_read >= r.length) && (!r.is_freed)) { 
+          //kvValuePool.Put(r.pool_buf)
+          //r.is_freed = true
         }
 	return
 }
@@ -587,7 +634,9 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 		return nil, err
 	}
         //fmt.Println("#### In ReadFileStream ####", volume, filePath, offset, length)
-        return ioutil.NopCloser(NewReader_kv(k, entry, offset, length)), nil
+        //return ioutil.NopCloser(NewReader_kv(k, entry, offset, length)), nil
+        //return io.ReadCloser(NewReader_kv(k, entry, offset, length)), nil
+        return NewReader_kv(nskey, k, entry, offset, length), nil
 
         //grid := atomic.AddUint64(&num_read, 1)       
  
@@ -842,6 +891,7 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
           fmt.Println("??? Got error while reading ???")
      
 	}
+        r.Close()
         //fmt.Println("### In ReadAll, returning", time.Now(), volume, filePath, fi.Size)
 	return r_b, nil
 	//return ioutil.ReadAll(r)
