@@ -785,7 +785,6 @@ func (k *KV) Delete(keyStr string) error {
 }
 
 func (k *KV) List(keyStr string, b []byte) ([]string, error) {
-        //fmt.Println("##### In List call #####")
 	if kvSerialize {
 		kvMu.Lock()
 		defer kvMu.Unlock()
@@ -806,7 +805,6 @@ func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 			return nil, errFileNotFound
 		}
 		numKeys = int(numKeysC)
-                //fmt.Println("Num list entries = ", numKeys)
 		for i := 0; i < numKeys; i++ {
 			index := bytes.IndexByte(buf, '\x00')
 			if index == -1 {

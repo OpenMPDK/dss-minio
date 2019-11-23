@@ -15,7 +15,7 @@ import (
 	"time"
         //"runtime"
         "sync/atomic"
-        "strconv"
+        //"strconv"
 )
 
 const kvVolumesKey = ".minio.sys/kv-volumes"
@@ -59,9 +59,7 @@ func invokeGC() {
         time.Sleep(2 * time.Second)
     }
 }
-
 var init_gc uint32 = 0
-var read_delay_multiplier = 10
 
 func newKVPosix(path string) (StorageAPI, error) {
 	kvPath := path
@@ -81,21 +79,16 @@ func newKVPosix(path string) (StorageAPI, error) {
 	if err := minio_nkv_open(configPath); err != nil {
 		return nil, err
 	}
+
         if (init_gc == 0) {
           go invokeGC()
           atomic.AddUint32(&init_gc, 1)
         }
+
 	nkvSync := true
 	if os.Getenv("MINIO_NKV_ASYNC") != "" {
 		nkvSync = false
 	}
-
-        str := os.Getenv("MINIO_NKV_PIPE_READ_DELAY_MULTIPLIER")
-        if str != "" {
-        
-          valSize, _ := strconv.Atoi(str)
-          read_delay_multiplier = valSize
-        }
 
 	kv, err := newKV(path, nkvSync)
 	if err != nil {
@@ -298,7 +291,6 @@ func (k *KVStorage) getKVNSEntry(nskey string) (entry KVNSEntry, err error) {
 
 func (k *KVStorage) ListDirForRename(volume, dirPath string, count int) ([]string, error) {
      
-        //fmt.Println("#### In ListDirForRename ####")
 	nskey := pathJoin(volume, dirPath, "xl.json")
 
 	entry, err := k.getKVNSEntry(nskey)
@@ -339,9 +331,6 @@ func (k *KVStorage) ListDir(volume, dirPath string, count int) ([]string, error)
        //fmt.Printf("%s", buf_trace)
 	bufp := kvValuePool.Get().(*[]byte)
 	defer kvValuePool.Put(bufp)
-
-        //bufp := kvValuePoolList.Get().(*[]byte)
-        //defer kvValuePoolList.Put(bufp)
 
 	entries, err := k.kv.List(pathJoin(volume, dirPath), *bufp)
 	if err != nil {
@@ -393,7 +382,6 @@ func (k *KVStorage) DeleteDir(volume, dirPath string) error {
 }
 
 func (k *KVStorage) CreateFile(volume, filePath string, size int64, reader io.Reader) error {
-        //fmt.Println("#### In CreateFile ####")
 	if err := k.verifyVolume(volume); err != nil {
 		return err
 	}
@@ -482,17 +470,14 @@ func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int6
         id := entry.IDs[index]
         data_b, err := k.kv.Get(k.DataKey(id), *pool_buf)
         if err != nil {
-          //w.CloseWithError(err)
-          //return
+          fmt.Println("###Error during kv get", key, err)
         }
 
         index++
-        //fmt.Println("###Reader.open called, ", key)
 	return &Reader{key, data_b[blockOffset : blockOffset+blockLength], pool_buf, entry, k, 0, 0, offset, length, startIndex, endIndex, kvMaxValueSize, index, false}
 }
 
 func (r *Reader) Close() error {
-  //fmt.Println("###Reader.close called, ", r.key_name, r.is_freed)
   if (!r.is_freed) {
     kvValuePool.Put(r.pool_buf)
     r.is_freed = true
@@ -509,21 +494,8 @@ func (r *Reader) Read(p []byte) (n int, err error) {
         var bytes_copied int = 0
         var read_next_chunk bool = false
 
-        //remaining := int64(len(r.valid_data)) - r.readIndex
-        //if ((remaining > 0) && (int64(len(p)) > remaining)) {
-          //fmt.Println("Remaining = ", remaining)
-          //bytes_copied = copy(p[:remaining], r.valid_data[r.readIndex:])
-          //r.readIndex += int64(bytes_copied)
-          //r.total_read += int64(bytes_copied)
-        //}
-
         if (r.total_read >= r.length) {
-          //fmt.Println("Returning EOF", r.total_read, r.readIndex, r.length, int64(len(p)))
 	  err = io.EOF
-          //if (!r.is_freed) {
-            //kvValuePool.Put(r.pool_buf)
-            //r.is_freed = true
-          //}
 	  return
         } else {
             if r.readIndex >= int64(len(r.valid_data)) {
@@ -531,7 +503,6 @@ func (r *Reader) Read(p []byte) (n int, err error) {
             } else {
               remaining := int64(len(r.valid_data)) - r.readIndex
               if ((remaining > 0) && (int64(len(p)) > remaining)) {
-                //fmt.Println("Remaining = ", remaining)
                 bytes_copied = copy(p[:remaining], r.valid_data[r.readIndex:])
                 r.readIndex += int64(bytes_copied)
                 r.total_read += int64(bytes_copied)
@@ -539,11 +510,6 @@ func (r *Reader) Read(p []byte) (n int, err error) {
                 if (r.total_read < r.length) {
                   read_next_chunk = true
                 } else {
-                  //fmt.Println("Done reading, returning", r.total_read, r.length, r.is_freed)
-                  //if (!r.is_freed) {
-                    //kvValuePool.Put(r.pool_buf)
-                    //r.is_freed = true
-                  //}
                   return
 
                 }
@@ -552,25 +518,10 @@ func (r *Reader) Read(p []byte) (n int, err error) {
             }
         }
 
-        //remaining := int64(len(r.valid_data)) - r.readIndex
-        //if ((remaining > 0) && (int64(len(p)) > remaining)) {
-          //fmt.Println("Remaining = ", remaining)
-          //bytes_copied = copy(p[:remaining], r.valid_data[r.readIndex:])
-          //r.readIndex += int64(bytes_copied)
-          //r.total_read += int64(bytes_copied)
-          //n = bytes_copied
-          //read_next_chunk = true
-        //}
-       
         if (read_next_chunk) {
           //Read the next chunk from KV
           if (r.index > r.endIndex) {
-            fmt.Println("Returning EOF from index", r.index, r.endIndex, r.total_read, r.length)
-            //err = io.EOF
-            //if (!r.is_freed) {
-              //kvValuePool.Put(r.pool_buf)
-              //r.is_freed = true
-            //}
+            fmt.Println("Returning EOF from index !!", r.index, r.endIndex, r.total_read, r.length)
             return
           }
           var blockOffset, blockLength int64
@@ -591,8 +542,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
           id := r.entry.IDs[r.index]
           data_b, err := r.k.kv.Get(r.k.DataKey(id), *r.pool_buf)
           if err != nil {
-            //w.CloseWithError(err)
-            fmt.Println("###Error during kv get")
+            fmt.Println("###Error during kv get", r.key_name, err)
             
             return n, err
           }
@@ -602,29 +552,18 @@ func (r *Reader) Read(p []byte) (n int, err error) {
             fmt.Println("##### KV GET failed with 0 length object, key = ", r.k.DataKey(id))
             os.Exit(1)            
           }
-          //r.total_read += r.readIndex
           r.readIndex = 0
-          //fmt.Println("Buffer refreshed, ", r.total_read, r.readIndex, r.length, n, int64(len(p)), int64(len(r.valid_data)))
         }
 	
 	n = copy(p[bytes_copied:], r.valid_data[r.readIndex:])
 	r.readIndex += int64(n)
         r.total_read += int64(n)
         n += bytes_copied
-        if ((r.total_read >= r.length) && (!r.is_freed)) { 
-          //kvValuePool.Put(r.pool_buf)
-          //r.is_freed = true
-        }
 	return
 }
 
-var num_gr uint64 = 0
-var num_read uint64 = 0
-var wg sync.WaitGroup
-var is_waiting uint32 = 0
 
 func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64) (io.ReadCloser, error) {
-        //fmt.Println("#### In ReadFileStream ####")
 	//if err := k.verifyVolume(volume); err != nil {
 	//	return nil, err
 	//}
@@ -633,110 +572,8 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 	if err != nil {
 		return nil, err
 	}
-        //fmt.Println("#### In ReadFileStream ####", volume, filePath, offset, length)
-        //return ioutil.NopCloser(NewReader_kv(k, entry, offset, length)), nil
-        //return io.ReadCloser(NewReader_kv(k, entry, offset, length)), nil
         return NewReader_kv(nskey, k, entry, offset, length), nil
 
-        //grid := atomic.AddUint64(&num_read, 1)       
- 
-        //for num_gr > 200 {
-          //fmt.Println("### waiting till 200, ", num_gr, nskey) 
-          //wg.Add(1)
-          //time.Sleep(time.Nanosecond)
-        //}
-
-	//r, w := io.Pipe()
-	//go func() {
-		//bufp := kvValuePool.Get().(*[]byte)
-		//defer kvValuePool.Put(bufp)
-
-                kvMaxValueSize := int64(kvMaxValueSize)
-                var buf_offset int64 = 0
-                var buf_len int64 = 0
-                buf_len = length + (kvMaxValueSize - (length % kvMaxValueSize))
-                buf_big := make([]byte, buf_len)
-
-		//kvMaxValueSize := int64(kvMaxValueSize)
-		startIndex := offset / kvMaxValueSize
-		endIndex := (offset + length) / kvMaxValueSize
-                //var byte_entries []byte
-                //fmt.Println("### Metrics are: ", buf_len, buf_offset, length, offset, kvMaxValueSize);
-		for index := startIndex; index <= endIndex; index++ {
-			var blockOffset, blockLength int64
-			switch {
-			case startIndex == endIndex:
-				blockOffset = offset % kvMaxValueSize
-				blockLength = length
-			case index == startIndex:
-				blockOffset = offset % kvMaxValueSize
-				blockLength = kvMaxValueSize - blockOffset
-			case index == endIndex:
-				blockOffset = 0
-				blockLength = (offset + length) % kvMaxValueSize
-			default:
-				blockOffset = 0
-				blockLength = kvMaxValueSize
-			}
-			if blockLength == 0 {
-				break
-			}
-			id := entry.IDs[index]
-                        //if (endIndex > 0) {
-                          //fmt.Println("### Starting a GR, ", grid, num_gr, nskey, length, offset, startIndex, endIndex, blockOffset, blockOffset+blockLength)
-                        //}
-			//data, err := k.kv.Get(k.DataKey(id), *bufp)
-                        //fmt.Println("### Metrics are before Get: ", buf_len, buf_offset, length, offset, blockOffset, blockOffset+blockLength);
-                        data, err := k.kv.Get(k.DataKey(id), buf_big[buf_offset: buf_offset+kvMaxValueSize ])
-			if err != nil {
-				//w.CloseWithError(err)
-				//return
-			}
-                        //buf_offset += int64(len(data))
-                        buf_offset += blockOffset+blockLength
-                        //if (endIndex >= 0) {
-                          //fmt.Println("### Starting a GR, ", time.Now(), grid, num_gr, volume, filePath, length, offset, startIndex, endIndex, blockOffset, blockOffset+blockLength, len(data), cap(data))
-                        //}
-
-                        if (int64(len(data)) < blockOffset+blockLength) {
-                          fmt.Println("### Error, buffer overflow")
-                        } 
-			//w.Write(data[blockOffset : blockOffset+blockLength])
-
-                        //if (endIndex >= 0) {
-                          //fmt.Println("### Exiting a GR, ", time.Now(), grid, num_gr, volume, filePath, length, offset, startIndex, endIndex, len(data), cap(data))
-                        //}
-                      
-                        //sleep_time := time.Duration(read_delay_multiplier) * time.Nanosecond
-                        //fmt.Println("### Exiting a GR, ", sleep_time)
-                        //time.Sleep(sleep_time)
-
-                        //if (need_buffer) {
-                          //byte_entries = append(byte_entries, data[blockOffset : blockOffset+blockLength]...)
-                        //} else {
-                          //w.Write(data[blockOffset : blockOffset+blockLength])
-                        //} 
-
-		}
-                //if (endIndex > 0) {
-                  //fmt.Println("### Exiting a GR, ", grid, num_gr, nskey, length, offset, startIndex, endIndex)
-                //}
-                //if (need_buffer) {                
-                  //w.Write(byte_entries)
-                //}
-		//w.Close()
-
-	//}()
-
-        //if (num_gr == 50) {
-          //fmt.Println("### Wait , num_gr = ", num_gr)
-          //wg.Wait()
-        //}
-
-	//return ioutil.NopCloser(r), nil
-	//return ioutil.NopCloser(bytes.NewReader(byte_entries)), nil
-	return ioutil.NopCloser(bytes.NewReader(buf_big)), nil
-	//return ioutil.NopCloser(r), fmt.Errorf("grid = %u", grid)
 }
 
 func (k *KVStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) error {
@@ -831,7 +668,6 @@ func (k *KVStorage) die(key string, err error) {
 }
 
 func (k *KVStorage) DeleteFile(volume string, path string) (err error) {
-        //fmt.Println("#### In DeleteFile ####")
 	if err := k.verifyVolume(volume); err != nil {
 		return err
 	}
@@ -882,17 +718,16 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
 	}
 	r, err := k.ReadFileStream(volume, filePath, 0, fi.Size)
 	if err != nil {
-                fmt.Println("??? Got error while ReadFileStream ???")
+                fmt.Println("??? Got error while ReadFileStream ???", err)
+                r.Close()
 		return nil, err
 	}
 	r_b, err_r := ioutil.ReadAll(r)
 	if err_r != nil {
-		//log.Fatal(err)
-          fmt.Println("??? Got error while reading ???")
-     
+	  fmt.Println("??? Got error during read ???", err_r)
+          r.Close()
+          return nil, err_r
 	}
         r.Close()
-        //fmt.Println("### In ReadAll, returning", time.Now(), volume, filePath, fi.Size)
 	return r_b, nil
-	//return ioutil.ReadAll(r)
 }

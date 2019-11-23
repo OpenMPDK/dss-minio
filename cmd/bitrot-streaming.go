@@ -22,13 +22,8 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
-        //"io/ioutil"
-        "fmt"
-        "os"
-        //"sync/atomic"
-        //"runtime"
+
 	"github.com/minio/minio/cmd/logger"
-        "strconv"
 )
 
 // Calculates bitrot in chunks and writes the hash into the stream.
@@ -108,14 +103,6 @@ type streamingBitrotReader struct {
 	h          hash.Hash
 	shardSize  int64
 	hashBytes  []byte
-        totalRead  int64 
-        r_offset   int64
-        r_b        []byte
-        r_id       int64
-        l_c_s      int
-        buf_m      int
-        last_till  int64
-        buffer_th  int
 }
 
 func (b *streamingBitrotReader) Close() error {
@@ -125,15 +112,8 @@ func (b *streamingBitrotReader) Close() error {
 	return b.rc.Close()
 }
 
-var reader_uuid int64 = 0
-
 func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 	var err error
-        //var reader_id int64
-        //var r_b []byte
-        //var r_chunk_size int = 0
-
-        //var readLen int64 = 0;
 	if offset%b.shardSize != 0 {
 		// Offset should always be aligned to b.shardSize
 		logger.LogIf(context.Background(), errUnexpected)
@@ -141,148 +121,43 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 	}
 	if b.rc == nil {
 		// For the first ReadAt() call we need to open the stream for reading.
-                b.r_b = nil
-                //runtime.GC()
-                //if (b.totalRead != b.last_till) {
-                  //fmt.Println("### Read not finished !! ", b.totalRead, b.last_till)
-                //}
-                //chunk_len := len(buf) + len(b.hashBytes)
-                //mult := b.buf_m
-                //for (chunk_len < b.buffer_th) {
-                 
-                  //chunk_len *= mult
-                  //mult += 1
-                //}
-                //fmt.Println("### Chunk len = ", chunk_len)
-                //if (mult != b.buf_m) {
-                  //b.r_b = make([]byte, chunk_len)
-                //}
-                b.r_offset = 0
-                b.totalRead = 0
-                //b.r_id = atomic.AddInt64(&reader_uuid, 1)
 		b.currOffset = offset
 		streamOffset := (offset/b.shardSize)*int64(b.h.Size()) + offset
-                b.last_till = b.tillOffset-streamOffset
 		b.rc, err = b.disk.ReadFileStream(b.volume, b.filePath, streamOffset, b.tillOffset-streamOffset)
 		if err != nil {
 			logger.LogIf(context.Background(), err)
 			return 0, err
 		}
-                
-	} else {
-          //fmt.Println("### Reusing the stream ### ", offset, int64(len(b.hashBytes)), int64(len(buf)), b.currOffset, b.tillOffset)
-          
-        }
+	}
 	if offset != b.currOffset {
 		logger.LogIf(context.Background(), errUnexpected)
 		return 0, errUnexpected
 	}
 	b.h.Reset()
-        if (b.r_b != nil) {
-          if ((int(b.r_offset) == b.l_c_s) && (b.totalRead != b.last_till)) {
-            //fmt.Println("### Before ReadAll ### ", b.r_id, b.r_offset, int64(len(b.r_b)), b.totalRead, b.tillOffset)
-            //b.r_b, err = ioutil.ReadAll(b.rc)
-            b.l_c_s, err = io.ReadFull(b.rc, b.r_b)
-            if err != nil {
-              //fmt.Println("??? Got error while reading from b.rc???", b.l_c_s, err)
-            }
-            for (int64(len(b.r_b)) == 0) {
- 
-              fmt.Println("### ReadAll ### ", b.r_id, offset, b.r_offset, b.totalRead, int64(len(buf)), b.currOffset, b.tillOffset)
-              //b.r_b, err = ioutil.ReadAll(b.rc)
-              b.l_c_s, err = io.ReadFull(b.rc, b.r_b)
-              if err != nil {
-                fmt.Println("??? Got error while reading from b.rc???")
-                return 0, errUnexpected
-              }
-            
-            }
-            b.totalRead += int64(b.l_c_s)
-            b.r_offset = 0
-            //fmt.Println("### After ReadAll ### ", b.r_id, b.r_offset, b.l_c_s, int64(len(b.r_b)), int64(len(buf)), b.totalRead, b.tillOffset)
-          } else {
-            //fmt.Println("### Still consuming old read ### ", b.r_id, b.r_offset, b.l_c_s, int64(len(b.r_b)), int64(len(buf)), b.totalRead, b.tillOffset)
-          }
-          if (b.r_offset > int64(len(b.r_b))) {
-            fmt.Println("### copy1 ### ", b.r_id, b.r_offset, int64(len(b.r_b)))
-          }
-          copy (b.hashBytes, b.r_b[b.r_offset:])
-        
-          b.r_offset += int64(len(b.hashBytes))
-
-          if (b.r_offset > int64(len(b.r_b))) {
-            fmt.Println("### copy2 ### ", b.r_id, b.r_offset, int64(len(b.r_b)))
-          }        
-          copy(buf, b.r_b[b.r_offset:])
-          b.r_offset += int64(len(buf)) 
-
-        } else {
-          //fmt.Println("### No copy ### ", int64(len(buf)), int64(len(b.hashBytes)))
-	  _, err = io.ReadFull(b.rc, b.hashBytes)
-	  if err != nil {
-	    logger.LogIf(context.Background(), err)
-	    return 0, err
-	  }
-	  _, err = io.ReadFull(b.rc, buf)
-	  if err != nil {
-	    logger.LogIf(context.Background(), err)
-	    return 0, err
-	  }
-        } 
-
+	_, err = io.ReadFull(b.rc, b.hashBytes)
+	if err != nil {
+		logger.LogIf(context.Background(), err)
+		return 0, err
+	}
+	_, err = io.ReadFull(b.rc, buf)
+	if err != nil {
+		logger.LogIf(context.Background(), err)
+		return 0, err
+	}
 	b.h.Write(buf)
 
 	if !bytes.Equal(b.h.Sum(nil), b.hashBytes) {
-        //fmt.Println("### Hash compare ### ", b.r_id, h_offset, int64(len(b.hashBytes)), int64(len(b.r_b)))
-	//if !bytes.Equal(b.h.Sum(nil), b.r_b[h_offset:int64(len(b.hashBytes))]) {
 		err = hashMismatchError{hex.EncodeToString(b.hashBytes), hex.EncodeToString(b.h.Sum(nil))}
 		logger.LogIf(context.Background(), err)
-                fmt.Println("### Hash mismatch ### ", err)
-                os.Exit(3)
 		return 0, err
 	}
-
 	b.currOffset += int64(len(buf))
-
-        //readSofar := int64(len(buf)) + int64(len(b.hashBytes));
-        //b.totalRead += readSofar
-        //if ((readSofar != readLen) && (readLen != 0)) {
-          //fmt.Println("### Read pending ###", offset, int64(len(buf)), int64(len(b.hashBytes)), readLen, b.currOffset, b.tillOffset)
-        //}
-        //if (b.totalRead >= b.tillOffset) {
-          //fmt.Println("###Closing the stream..")
-          //b.rc.Close()
-        //  b.num_opened -= 1
-        //  fmt.Println("### Clearing the stream ### ", offset, int64(len(buf)), b.currOffset, b.totalRead, b.num_opened)
-        //  _, err_r:= ioutil.ReadAll(b.rc)
-        //  if err_r != nil {
-                //log.Fatal(err)
-          //  fmt.Println("??? Got error while reading ???")
-
-          //}
-        //}
-
 	return len(buf), nil
 }
 
 // Returns streaming bitrot reader implementation.
 func newStreamingBitrotReader(disk StorageAPI, volume, filePath string, tillOffset int64, algo BitrotAlgorithm, shardSize int64) *streamingBitrotReader {
 	h := algo.New()
-        buf_multi := 2
-        str := os.Getenv("MINIO_NKV_PIPE_READ_BUFFER_MULTIPLIER") 
-        if str != "" {
-
-          valSize, _ := strconv.Atoi(str)
-          buf_multi = valSize
-        }
-        buf_th := 6 * 1024 * 1024
-        str_th := os.Getenv("MINIO_NKV_PIPE_READ_BUFFER_THRESHOLD")
-        if str_th != "" {
-
-          valSize, _ := strconv.Atoi(str_th)
-          buf_th = valSize
-        }
-
 	return &streamingBitrotReader{
 		disk,
 		nil,
@@ -293,15 +168,5 @@ func newStreamingBitrotReader(disk StorageAPI, volume, filePath string, tillOffs
 		h,
 		shardSize,
 		make([]byte, h.Size()),
-                0,
-                0,
-                //nil,
-                //make([]byte, 5242912),
-                nil,
-                -1,
-                0,
-                buf_multi,
-                0,
-                buf_th,
 	}
 }
