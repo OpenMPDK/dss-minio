@@ -300,7 +300,13 @@ func NewEndpointList(args ...string) (endpoints EndpointList, err error) {
 			return nil, fmt.Errorf("duplicate endpoints found")
 		}
 		uniqueArgs.Add(arg)
+                if (globalNkvShared) {
+                  if endpoint.IsLocal {
+                    globalEndpointsLocal = append(globalEndpointsLocal, endpoint)
+                  } 
+                }
 		endpoints = append(endpoints, endpoint)
+                
 	}
 	return endpoints, nil
 }
@@ -326,6 +332,10 @@ func CreateEndpoints(serverAddr string, args ...[]string) (string, EndpointList,
 	var endpoints EndpointList
 	var setupType SetupType
 	var err error
+        globalNkvShared = false
+        if os.Getenv("MINIO_NKV_SHARED") != "" {
+          globalNkvShared = true
+        }
 
 	// Check whether serverAddr is valid for this host.
 	if err = CheckLocalServerAddr(serverAddr); err != nil {
@@ -459,7 +469,7 @@ func CreateEndpoints(serverAddr string, args ...[]string) (string, EndpointList,
 	}
 
 	// All endpoints are pointing to local host
-	if len(endpoints) == localEndpointCount {
+	if ((len(endpoints) == localEndpointCount) ) {
 		// If all endpoints have same port number, then this is XL setup using URL style endpoints.
 		if len(localPortSet) == 1 {
 			if len(localServerAddrSet) > 1 {

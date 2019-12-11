@@ -282,6 +282,10 @@ func createServerEndpoints(serverAddr string, args ...string) (string, EndpointL
 	if err != nil {
 		return serverAddr, nil, -1, 0, 0, err
 	}
-
-	return serverAddr, endpoints, setupType, len(setArgs), len(setArgs[0]), nil
+        if (!globalNkvShared) {
+	  return serverAddr, endpoints, setupType, len(setArgs), len(setArgs[0]), nil
+        } else {
+          //To do, fix tis with setArgs
+	  return serverAddr, endpoints, setupType, len(setArgs), len(globalEndpointsLocal), nil
+        }
 }

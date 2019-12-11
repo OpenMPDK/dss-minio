@@ -162,6 +162,8 @@ var (
 	globalHTTPTraceFile *os.File
 
 	globalEndpoints EndpointList
+	globalEndpointsLocal EndpointList
+        globalNkvShared bool 
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()

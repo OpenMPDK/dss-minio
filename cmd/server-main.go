@@ -274,7 +274,7 @@ func serverMain(ctx *cli.Context) {
 
 	// Set nodes for dsync for distributed setup.
 	if globalIsDistXL {
-		globalDsync, err = dsync.New(newDsyncNodes(globalEndpoints))
+                globalDsync, err = dsync.New(newDsyncNodes(globalEndpoints))
 		if err != nil {
 			logger.Fatal(err, "Unable to initialize distributed locking on %s", globalEndpoints)
 		}
@@ -306,8 +306,12 @@ func serverMain(ctx *cli.Context) {
 	}()
 
 	signal.Notify(globalOSSignalCh, os.Interrupt, syscall.SIGTERM)
-
-	newObject, err := newObjectLayer(globalEndpoints)
+        var newObject ObjectLayer
+        if (!globalNkvShared) {
+	  newObject, err = newObjectLayer(globalEndpoints)
+        } else {
+          newObject, err = newObjectLayer(globalEndpointsLocal)
+        }
 	if err != nil {
 		// Stop watching for any certificate changes.
 		globalTLSCerts.Stop()
@@ -315,7 +319,6 @@ func serverMain(ctx *cli.Context) {
 		globalHTTPServer.Shutdown()
 		logger.FatalIf(err, "Unable to initialize backend")
 	}
-
 	// Populate existing buckets to the etcd backend
 	if globalDNSConfig != nil {
 		initFederatorBackend(newObject)
@@ -323,7 +326,6 @@ func serverMain(ctx *cli.Context) {
 
 	// Re-enable logging
 	logger.Disable = false
-
 	// Create a new config system.
 	globalConfigSys = NewConfigSys()
 
@@ -331,7 +333,6 @@ func serverMain(ctx *cli.Context) {
 	if err = globalConfigSys.Init(newObject); err != nil {
 		logger.Fatal(err, "Unable to initialize config system")
 	}
-
 	// Load logger subsystem
 	loadLoggers()
 
@@ -341,7 +342,6 @@ func serverMain(ctx *cli.Context) {
 		globalCacheObjectAPI, err = newServerCacheObjects(cacheConfig)
 		logger.FatalIf(err, "Unable to initialize disk caching")
 	}
-
 	// Create new IAM system.
 	globalIAMSys = NewIAMSys()
 	if err = globalIAMSys.Init(newObject); err != nil {
@@ -389,7 +389,6 @@ func newObjectLayer(endpoints EndpointList) (newObject ObjectLayer, err error) {
 		// Initialize new FS object layer.
 		return NewFSObjectLayer(endpoints[0].Path)
 	}
-
 	format, err := waitForFormatXL(context.Background(), endpoints[0].IsLocal, endpoints, globalXLSetCount, globalXLSetDriveCount)
 	if err != nil {
 		return nil, err
