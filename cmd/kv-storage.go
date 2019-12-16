@@ -147,6 +147,11 @@ func (k *KVStorage) verifyVolume(volume string) error {
 	return err
 }
 
+func (k *KVStorage) SyncVolumes () (err error) {
+        k.volumes, _ = k.loadVolumes()
+	return nil
+}
+
 func (k *KVStorage) MakeVol(volume string) (err error) {
 	k.volumesMu.Lock()
 	defer k.volumesMu.Unlock()

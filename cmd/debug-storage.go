@@ -79,6 +79,10 @@ func (d *debugStorage) DeleteVol(volume string) (err error) {
 	return err
 }
 
+func (d *debugStorage) SyncVolumes() (err error) {
+	return d.s.SyncVolumes()
+}
+
 func (d *debugStorage) ListDir(volume, dirPath string, count int) ([]string, error) {
 	entries, err := d.s.ListDir(volume, dirPath, count)
 	if d.enable {

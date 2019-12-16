@@ -37,6 +37,7 @@ type StorageAPI interface {
 	ListVols() (vols []VolInfo, err error)
 	StatVol(volume string) (vol VolInfo, err error)
 	DeleteVol(volume string) (err error)
+        SyncVolumes() (err error)	
 
 	// File operations.
 	ListDir(volume, dirPath string, count int) ([]string, error)

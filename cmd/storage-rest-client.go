@@ -181,6 +181,10 @@ func (client *storageRESTClient) DiskInfo() (info DiskInfo, err error) {
 	return info, err
 }
 
+func (client *storageRESTClient) SyncVolumes () (err error) {
+        return nil
+}
+
 // MakeVol - create a volume on a remote disk.
 func (client *storageRESTClient) MakeVol(volume string) (err error) {
 	values := make(url.Values)

@@ -20,7 +20,6 @@ import (
 	"context"
 	"sort"
 	"sync"
-
 	"github.com/minio/minio-go/pkg/s3utils"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/policy"
@@ -165,6 +164,7 @@ func (xl xlObjects) GetBucketInfo(ctx context.Context, bucket string) (bi Bucket
 
 // listBuckets - returns list of all buckets from a disk picked at random.
 func (xl xlObjects) listBuckets(ctx context.Context) (bucketsInfo []BucketInfo, err error) {
+
 	for _, disk := range xl.getLoadBalancedDisks() {
 		if disk == nil {
 			continue

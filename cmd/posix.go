@@ -513,6 +513,10 @@ func (s *posix) MakeVol(volume string) (err error) {
 	return errVolumeExists
 }
 
+func (s *posix) SyncVolumes () (err error) {
+        return nil
+}
+
 // ListVols - list volumes.
 func (s *posix) ListVols() (volsInfo []VolInfo, err error) {
 	defer func() {

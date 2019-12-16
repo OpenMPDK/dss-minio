@@ -18,15 +18,16 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"hash/crc32"
 	"io"
+        "fmt"
 	"net/http"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
+        "os"
+        "strconv"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/bpool"
 	"github.com/minio/minio/pkg/madmin"
@@ -255,6 +256,34 @@ func (s *xlSets) GetDisks(setIndex int) func() []StorageAPI {
 	}
 }
 
+func (s *xlSets) syncSharedVols() {
+	var init_multi int = 0
+        syncTimeStr := os.Getenv("MINIO_NKV_SHARED_SYNC_INHTERVAL")
+        if syncTimeStr == "" {
+        	init_multi = 2
+        }
+        i, err := strconv.Atoi(syncTimeStr)
+        if err != nil {
+        	fmt.Println("MINIO_NKV_TIMEOUT is incorrect", syncTimeStr, err)
+    		os.Exit(1)
+  	} else {
+    		init_multi = i
+  	}
+
+  	for {
+        	for _, set := range s.sets {
+        		for _, disk := range set.getDisks() {
+                		if disk == nil {
+                        		continue
+                		}
+	        		_ = disk.SyncVolumes()
+            
+                	}
+        	}
+        	time.Sleep(time.Duration(init_multi) * time.Second)
+  	}
+}
+
 const defaultMonitorConnectEndpointInterval = time.Second * 10 // Set to 10 secs.
 
 // Initialize new set of erasure coded sets.
@@ -297,6 +326,10 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
 	// Start the disk monitoring and connect routine.
 	go s.monitorAndConnectEndpoints(defaultMonitorConnectEndpointInterval)
 
+        //Sync vols created by other minio instances in case of shared storage mode
+        if (globalNkvShared) {
+          go s.syncSharedVols()
+        }
 	return s, nil
 }
 
