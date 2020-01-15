@@ -99,16 +99,16 @@ func (xl xlObjects) isObjectDir(bucket, prefix string) (ok bool) {
 			defer wg.Done()
 			err := disk.StatDir(bucket, prefix)
 			errs[index] = err
-			// // Check if 'prefix' is an object on this 'disk', else continue the check the next disk
-			// entries, err := disk.ListDir(bucket, prefix, 1)
-			// if err != nil {
-			// 	errs[index] = err
-			// 	return
-			// }
-			// if len(entries) > 0 {
-			// 	errs[index] = errVolumeNotEmpty
-			// 	return
-			// }
+			 // Check if 'prefix' is an object on this 'disk', else continue the check the next disk
+			 entries, err := disk.ListDir(bucket, prefix, 1)
+			 if err != nil {
+			 	errs[index] = err
+			 	return
+			 }
+			 if len(entries) > 0 {
+			 	errs[index] = errVolumeNotEmpty
+			 	return
+			 }
 		}(index, disk)
 	}
 
