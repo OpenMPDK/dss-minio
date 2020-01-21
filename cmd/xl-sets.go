@@ -258,13 +258,13 @@ func (s *xlSets) GetDisks(setIndex int) func() []StorageAPI {
 
 func (s *xlSets) syncSharedVols() {
 	var init_multi int = 0
-        syncTimeStr := os.Getenv("MINIO_NKV_SHARED_SYNC_INHTERVAL")
+        syncTimeStr := os.Getenv("MINIO_NKV_SHARED_SYNC_INTERVAL")
         if syncTimeStr == "" {
         	init_multi = 2
         }
         i, err := strconv.Atoi(syncTimeStr)
         if err != nil {
-        	fmt.Println("MINIO_NKV_TIMEOUT is incorrect", syncTimeStr, err)
+        	fmt.Println("MINIO_NKV_SHARED_SYNC_INTERVAL is incorrect", syncTimeStr, err)
     		os.Exit(1)
   	} else {
     		init_multi = i
