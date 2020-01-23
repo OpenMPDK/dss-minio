@@ -757,15 +757,25 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 	if delimiter == slashSeparator {
 		recursive = false
 	}
-
 	walkResultCh, endWalkCh := s.listPool.Release(listParams{bucket, recursive, marker, prefix})
 	if walkResultCh == nil {
 		endWalkCh = make(chan struct{})
 		isLeaf := func(bucket, entry string) bool {
 			entry = strings.TrimSuffix(entry, slashSeparator)
+
 			// Verify if we are at the leaf, a leaf is where we
 			// see `xl.json` inside a directory.
-			return s.getHashedSet(entry).isObject(bucket, entry)
+			//return s.getHashedSet(hashPrefix).isObject(bucket, entry)
+                        var ok bool
+
+                        for _, set := range s.sets {
+                                ok = set.isObject(bucket, entry)
+                                if ok {
+                                        return true
+                                }
+                        }
+                        return false
+
 		}
 
 		isLeafDir := func(bucket, entry string) bool {
@@ -773,11 +783,11 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 			var ok bool
 			for _, set := range s.sets {
 				ok = set.isObjectDir(bucket, entry)
-				if ok {
-					return true
+				if !ok {
+					return false
 				}
 			}
-			return false
+			return true
 		}
 
 		listDir := listDirSetsFactory(ctx, isLeaf, isLeafDir, s.sets...)
