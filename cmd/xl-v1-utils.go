@@ -80,7 +80,7 @@ func reduceReadQuorumErrs(ctx context.Context, errs []error, ignoredErrs []error
 // reduceWriteQuorumErrs behaves like reduceErrs but only for returning
 // values of maximally occurring errors validated against writeQuorum.
 func reduceWriteQuorumErrs(ctx context.Context, errs []error, ignoredErrs []error, writeQuorum int) (maxErr error) {
-	return reduceQuorumErrs(ctx, errs, ignoredErrs, writeQuorum, errXLWriteQuorum)
+	return reduceQuorumErrs(ctx, errs, ignoredErrs, writeQuorum - 1, errXLWriteQuorum)
 }
 
 // Similar to 'len(slice)' but returns the actual elements count

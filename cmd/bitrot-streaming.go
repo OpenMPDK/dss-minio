@@ -124,7 +124,7 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		b.currOffset = offset
 		streamOffset := (offset/b.shardSize)*int64(b.h.Size()) + offset
 		b.rc, err = b.disk.ReadFileStream(b.volume, b.filePath, streamOffset, b.tillOffset-streamOffset)
-		if err != nil {
+		if ((b.rc == nil) || (err != nil)) {
 			logger.LogIf(context.Background(), err)
 			return 0, err
 		}

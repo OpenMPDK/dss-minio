@@ -21,6 +21,7 @@ import (
 	"io"
 
 	"sync"
+        "fmt"
 
 	"github.com/minio/minio/cmd/logger"
 )
@@ -63,9 +64,11 @@ func (p *parallelWriter) Write(ctx context.Context, blocks [][]byte) error {
 			nilCount++
 		}
 	}
-	if nilCount >= p.writeQuorum {
+	if nilCount >= (p.writeQuorum - 1) {
 		return nil
-	}
+	} else {
+          fmt.Println("### More error than quorum !", nilCount, p.writeQuorum) 
+        }
 	return reduceWriteQuorumErrs(ctx, p.errs, objectOpIgnoredErrs, p.writeQuorum)
 }
 

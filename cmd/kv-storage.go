@@ -476,6 +476,8 @@ func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int6
         data_b, err := k.kv.Get(k.DataKey(id), *pool_buf)
         if err != nil {
           fmt.Println("###Error during kv get", key, err)
+          //return nil
+          return nil
         }
 
         index++
@@ -483,6 +485,10 @@ func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int6
 }
 
 func (r *Reader) Close() error {
+  if (r == nil) {
+    fmt.Println("### Error, null reader to close")
+    return errFaultyDisk 
+  }
   if (!r.is_freed) {
     kvValuePool.Put(r.pool_buf)
     r.is_freed = true
@@ -494,7 +500,10 @@ func (r *Reader) Close() error {
 
 func (r *Reader) Read(p []byte) (n int, err error) {
  
-       
+        if (r == nil) {
+          fmt.Println("### Error, null reader to read")
+          return 0, errFaultyDisk
+        }
         n = 0
         var bytes_copied int = 0
         var read_next_chunk bool = false
@@ -577,7 +586,12 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 	if err != nil {
 		return nil, err
 	}
-        return NewReader_kv(nskey, k, entry, offset, length), nil
+        r_io := NewReader_kv(nskey, k, entry, offset, length)
+        if (r_io == nil) {
+          return r_io, errFaultyDisk
+        } else {       
+          return r_io, nil
+        }
 
 }
 
@@ -722,9 +736,11 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
 		return nil, err
 	}
 	r, err := k.ReadFileStream(volume, filePath, 0, fi.Size)
-	if err != nil {
+	if (r == nil || err != nil) {
                 fmt.Println("??? Got error while ReadFileStream ???", err)
-                r.Close()
+                if (r != nil) {
+                  r.Close()
+                }
 		return nil, err
 	}
 	r_b, err_r := ioutil.ReadAll(r)
