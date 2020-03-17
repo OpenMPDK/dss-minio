@@ -69,6 +69,7 @@ build: checks
 	@echo $(BUILD_LDFLAGS)
 	@GOFLAGS="" go build -tags kqueue --ldflags $(BUILD_LDFLAGS) -o $(PWD)/minio
 	@GOFLAGS="" CGO_ENABLED=0 go build -tags kqueue --ldflags="-s -w" -o $(PWD)/dockerscripts/healthcheck $(PWD)/dockerscripts/healthcheck.go
+	#@GOFLAGS="" CGO_ENABLED=1 go build -tags kqueue -o $(PWD)/dockerscripts/healthcheck $(PWD)/dockerscripts/healthcheck.go
 
 docker: build
 	@docker build -t $(TAG) . -f Dockerfile.dev

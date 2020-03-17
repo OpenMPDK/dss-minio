@@ -174,8 +174,13 @@ func (s *xlSets) reInitDisks(refFormat *formatXLV3, storageDisks []StorageAPI, f
 // any given sets.
 func (s *xlSets) connectDisksWithQuorum() {
 	var onlineDisks int
+        var set_index int = 0
+        var drive_index int = 0
+        var endpoint_index int = 0
+
 	for onlineDisks < len(s.endpoints)/2 {
 		for _, endpoint := range s.endpoints {
+                        endpoint_index++
 			if s.isConnected(endpoint) {
 				continue
 			}
@@ -191,6 +196,26 @@ func (s *xlSets) connectDisksWithQuorum() {
 				printEndpointError(endpoint, err)
 				continue
 			}
+                        if (globalNkvShared) {
+                          num_sets := len(s.format.XL.Sets)
+                          num_drives_per_set := len(s.format.XL.Sets[0])
+                          if ((endpoint_index -1) == 0) {
+                            set_index = 0
+                            drive_index = 0
+                          } else {
+
+                            if ((endpoint_index -1) % num_drives_per_set == 0) {
+                              set_index = ((endpoint_index -1) / num_drives_per_set)
+                              drive_index = 0
+                            } else {
+                              drive_index++
+                            }
+                          }
+                          i = set_index
+                          j = drive_index
+                          fmt.Println("In connectDisksWithQuorum, sets, driverperset, endpoint, disk, index (i,j) = ", 
+                                      num_sets, num_drives_per_set, endpoint, disk, i, j)
+                        }
 			s.xlDisks[i][j] = disk
 			onlineDisks++
 		}
@@ -203,7 +228,12 @@ func (s *xlSets) connectDisksWithQuorum() {
 // connectDisks - attempt to connect all the endpoints, loads format
 // and re-arranges the disks in proper position.
 func (s *xlSets) connectDisks() {
+        var set_index int = 0
+        var drive_index int = 0
+        var endpoint_index int = 0
+
 	for _, endpoint := range s.endpoints {
+                endpoint_index++
 		if s.isConnected(endpoint) {
 			continue
 		}
@@ -219,6 +249,28 @@ func (s *xlSets) connectDisks() {
 			printEndpointError(endpoint, err)
 			continue
 		}
+
+                if (globalNkvShared) {
+                  num_sets := len(s.format.XL.Sets)
+                  num_drives_per_set := len(s.format.XL.Sets[0])
+                  if ((endpoint_index -1) == 0) {
+                    set_index = 0
+                    drive_index = 0
+                  } else {
+
+                    if ((endpoint_index -1) % num_drives_per_set == 0) {
+                      set_index = ((endpoint_index -1) / num_drives_per_set)
+                      drive_index = 0
+                    } else {
+                      drive_index++
+                    }
+                  }
+                  i = set_index
+                  j = drive_index
+                  fmt.Println("In connectDisks, sets, driverperset, endpoint, disk, index (i,j) = ",
+                               num_sets, num_drives_per_set, endpoint, disk, i, j)
+                }
+
 		s.xlDisksMu.Lock()
 		s.xlDisks[i][j] = disk
 		s.xlDisksMu.Unlock()
@@ -288,7 +340,6 @@ const defaultMonitorConnectEndpointInterval = time.Second * 10 // Set to 10 secs
 
 // Initialize new set of erasure coded sets.
 func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesPerSet int) (ObjectLayer, error) {
-
 	// Initialize the XL sets instance.
 	s := &xlSets{
 		sets:               make([]*xlObjects, setCount),

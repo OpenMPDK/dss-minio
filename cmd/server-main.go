@@ -310,6 +310,7 @@ func serverMain(ctx *cli.Context) {
         if (!globalNkvShared) {
 	  newObject, err = newObjectLayer(globalEndpoints)
         } else {
+          //fmt.Println("globalEndpointsLocal = ", globalEndpointsLocal)
           newObject, err = newObjectLayer(globalEndpointsLocal)
         }
 	if err != nil {
@@ -383,7 +384,6 @@ func serverMain(ctx *cli.Context) {
 // Initialize object layer with the supplied disks, objectLayer is nil upon any error.
 func newObjectLayer(endpoints EndpointList) (newObject ObjectLayer, err error) {
 	// For FS only, directly use the disk.
-
 	isFS := len(endpoints) == 1
 	if isFS {
 		// Initialize new FS object layer.

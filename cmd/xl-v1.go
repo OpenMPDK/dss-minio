@@ -19,7 +19,6 @@ package cmd
 import (
 	"context"
 	"sort"
-
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/bpool"
 )

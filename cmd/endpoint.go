@@ -276,7 +276,6 @@ func localEndpointsDrivePerf(endpoints EndpointList) ServerDrivesPerfInfo {
 func NewEndpointList(args ...string) (endpoints EndpointList, err error) {
 	var endpointType EndpointType
 	var scheme string
-
 	uniqueArgs := set.NewStringSet()
 	// Loop through args and adds to endpoint list.
 	for i, arg := range args {

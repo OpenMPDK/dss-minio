@@ -24,7 +24,6 @@ import (
 	"path"
 	"sync"
 	"time"
-
 	"github.com/minio/minio/cmd/logger"
 	"github.com/tidwall/gjson"
 )

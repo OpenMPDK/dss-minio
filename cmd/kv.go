@@ -691,6 +691,10 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 			}
 
 		}
+                /*if (status == NKV_ERR_KEY_NOT_EXIST) {
+                  return nil, errDiskAccessDenied
+                }*/
+
 		if status != 0 {
 			return nil, errFileNotFound
 		}

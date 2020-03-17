@@ -24,7 +24,6 @@ import (
 	"path"
 	"strconv"
 	"sync"
-
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/hash"
 	"github.com/minio/minio/pkg/mimedb"
@@ -604,12 +603,10 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 
 		// return dirObjectInfo(bucket, object, data.Size(), opts.UserDefined), nil
 	}
-
 	// Validate put object input args.
 	if err = checkPutObjectArgs(ctx, bucket, object, xl, data.Size()); err != nil {
 		return ObjectInfo{}, err
 	}
-
 	// Validate input data size and it can never be less than zero.
 	if data.Size() < -1 {
 		logger.LogIf(ctx, errInvalidArgument)
