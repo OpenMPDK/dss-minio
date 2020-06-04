@@ -164,6 +164,8 @@ var (
 	globalEndpoints EndpointList
 	globalEndpointsLocal EndpointList
         globalNkvShared bool 
+        globalMinio_on_kv bool 
+        globalDummy_read bool 
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()

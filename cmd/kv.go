@@ -82,7 +82,6 @@ static int minio_nkv_get(struct minio_nkv_handle *handle, void *key, int keyLen,
   nkv_value nkvvalue = {value, valueLen, 0};
   result = nkv_retrieve_kvp(handle->nkv_handle, &ctx, &nkvkey, &option, &nkvvalue);
   *actual_length = nkvvalue.actual_length;
-  //printf("####NKV retrieve call success for key = %s, actual_len = %u ####\n", (char*)key, *actual_length);
   return result;
 }
 
@@ -279,6 +278,7 @@ func getKVMaxValueSize() int {
 }
 
 var kvChecksum = os.Getenv("MINIO_NKV_CHECKSUM") != ""
+var use_custome_reader = os.Getenv("MINIO_NKV_USE_CUSTOM_READER") != ""
 
 var globalNKVHandle C.uint64_t
 
@@ -625,6 +625,7 @@ func (k *KV) Put(keyStr string, value []byte) error {
 }
 
 func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
+        
 	if !strings.HasPrefix(keyStr, kvDataDir) {
 		keyStr = pathJoin(kvMetaDir, keyStr)
 	}

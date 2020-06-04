@@ -26,7 +26,6 @@ import (
 	"sort"
 	"sync"
 	"time"
-
 	"github.com/minio/minio/cmd/logger"
 )
 

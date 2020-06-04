@@ -24,6 +24,8 @@ import (
 	"path"
 	"strconv"
 	"sync"
+        "fmt"
+        //"runtime/debug"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/hash"
 	"github.com/minio/minio/pkg/mimedb"
@@ -148,7 +150,7 @@ func (xl xlObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBuc
 // Read(Closer). When err != nil, the returned reader is always nil.
 func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, rs *HTTPRangeSpec, h http.Header, lockType LockType, opts ObjectOptions) (gr *GetObjectReader, err error) {
 	var nsUnlocker = func() {}
-
+        //debug.PrintStack()
 	// Acquire lock
 	if lockType != noLock {
 		lock := xl.nsMutex.NewNSLock(bucket, object)
@@ -199,8 +201,12 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 	}
 
 	pr, pw := io.Pipe()
+	//pr, _ := io.Pipe()
 	go func() {
 		err := xl.getObject(ctx, bucket, object, off, length, pw, "", opts)
+                //block := make([]byte, length)
+                //_, err := io.Copy(pw, bytes.NewReader(block))
+                
 		pw.CloseWithError(err)
 	}()
 	// Cleanup function to cause the go routine above to exit, in
@@ -228,6 +234,7 @@ func (xl xlObjects) GetObject(ctx context.Context, bucket, object string, startO
 
 // getObject wrapper for xl GetObject
 func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, etag string, opts ObjectOptions) error {
+        //debug.PrintStack()
 
 	if err := checkGetObjArgs(ctx, bucket, object); err != nil {
 		return err
@@ -328,7 +335,7 @@ func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startO
 		if partLength > (length - totalBytesRead) {
 			partLength = length - totalBytesRead
 		}
-
+                //fmt.Println("### partIndex, partName, partSize, partLength, partOffset", partIndex, partName, partSize, partLength, partOffset)
 		tillOffset := erasure.ShardFileTillOffset(partOffset, partLength, partSize)
 		// Get the checksums of the current part.
 		readers := make([]io.ReaderAt, len(onlineDisks))
@@ -344,6 +351,7 @@ func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startO
 		// we return from this function.
 		closeBitrotReaders(readers)
 		if err != nil {
+                        fmt.Println("### Decode error = ", err)
 			return toObjectErr(err, bucket, object)
 		}
 		for i, r := range readers {
@@ -849,10 +857,10 @@ func (xl xlObjects) deleteObject(ctx context.Context, bucket, object string, wri
 			return reduceWriteQuorumErrs(ctx, dErrs, objectOpIgnoredErrs, writeQuorum)
 
 			disks, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, tmpObj, true, writeQuorum,
-				[]error{errFileNotFound, errFileAccessDenied})
+			  	  []error{errFileNotFound, errFileAccessDenied})
 		} else {
-			disks, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, tmpObj, true, writeQuorum,
-				[]error{errFileNotFound})
+	            disks, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, tmpObj, true, writeQuorum,
+			      []error{errFileNotFound})
 		}
 		if err != nil {
 			return toObjectErr(err, bucket, object)

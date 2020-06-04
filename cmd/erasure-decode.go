@@ -20,7 +20,7 @@ import (
 	"context"
 	"io"
 	"sync"
-
+        "fmt"
 	"github.com/minio/minio/cmd/logger"
 )
 
@@ -107,8 +107,10 @@ func (p *parallelReader) Read() ([][]byte, error) {
 			// For the last shard, the shardsize might be less than previous shard sizes.
 			// Hence the following statement ensures that the buffer size is reset to the right size.
 			p.buf[i] = p.buf[i][:p.shardSize]
+                        //fmt.Println("### Initiating bitrot read, index, shardsize, buf_len ::", i, p.shardSize, len(p.buf[i]), p.offset)
 			_, err := disk.ReadAt(p.buf[i], p.offset)
 			if err != nil {
+                                fmt.Println("!!! Read failed, err = ", err)
 				p.readers[i] = nil
 				// Since ReadAt returned error, trigger another read.
 				readTriggerCh <- true
@@ -128,7 +130,6 @@ func (p *parallelReader) Read() ([][]byte, error) {
 		p.offset += p.shardSize
 		return newBuf, nil
 	}
-
 	return nil, errXLReadQuorum
 }
 
@@ -169,18 +170,23 @@ func (e Erasure) Decode(ctx context.Context, writer io.Writer, readers []io.Read
 			blockLength = e.blockSize
 		}
 		if blockLength == 0 {
+                        fmt.Println("### Breaking from blocklength = 0") 
 			break
 		}
+                //fmt.Println("### block, startBlock, endBlock, e.blockSize, e.dataBlocks, offset, length, blockOffset, blockLength::", block, startBlock, endBlock, e.blockSize, e.dataBlocks, offset, length, blockOffset, blockLength)
 		bufs, err := reader.Read()
 		if err != nil {
+                        fmt.Println("### Returning on read failure, err =", err)
 			return err
 		}
 		if err = e.DecodeDataBlocks(bufs); err != nil {
 			logger.LogIf(ctx, err)
+                        fmt.Println("### Returning on decode failure, err =", err)
 			return err
 		}
 		n, err := writeDataBlocks(ctx, writer, bufs, e.dataBlocks, blockOffset, blockLength)
 		if err != nil {
+                        fmt.Println("### Returning on writedb failure, err =", err)
 			return err
 		}
 		bytesWritten += n

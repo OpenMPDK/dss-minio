@@ -17,6 +17,8 @@
 package cmd
 
 import (
+        //"bytes"
+        "os"
 	"context"
 	"crypto/hmac"
 	"encoding/binary"
@@ -30,7 +32,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
 	"time"
 
 	"github.com/gorilla/mux"
@@ -245,6 +246,12 @@ func (api objectAPIHandlers) SelectObjectContentHandler(w http.ResponseWriter, r
 // This implementation of the GET operation retrieves object. To use GET,
 // you must have READ access to the object.
 func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Request) {
+
+        globalDummy_read = false
+        if os.Getenv("MINIO_ENABLE_DUMMY_READ") != "" {
+          globalDummy_read = true
+        }
+
 	ctx := newContext(r, w, "GetObject")
 
 	defer logger.AuditLog(w, r, "GetObject", mustGetClaimsFromToken(r))
@@ -388,7 +395,10 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	// Write object content to response body
+        //block := make([]byte, gr.length)
+
 	if _, err = io.Copy(httpWriter, gr); err != nil {
+	//if _, err = io.Copy(httpWriter, bytes.NewReader(block)); err != nil {
 		if !httpWriter.HasWritten() && !statusCodeWritten { // write error response only if no data or headers has been written to client yet
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		}

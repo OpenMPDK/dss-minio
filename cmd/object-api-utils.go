@@ -430,6 +430,7 @@ type GetObjectReader struct {
 
 	cleanUpFns []func()
 	precondFn  func(ObjectInfo, string) bool
+        length     int64
 	once       sync.Once
 }
 
@@ -450,6 +451,7 @@ func NewGetObjectReaderFromReader(r io.Reader, oi ObjectInfo, pcfn CheckCopyPrec
 		pReader:    r,
 		cleanUpFns: cleanupFns,
 		precondFn:  pcfn,
+                
 	}, nil
 }
 
@@ -622,6 +624,7 @@ func NewGetObjectReader(rs *HTTPRangeSpec, oi ObjectInfo, pcfn CheckCopyPrecondi
 				pReader:    inputReader,
 				cleanUpFns: cFns,
 				precondFn:  pcfn,
+                                length:     length,
 			}
 			return r, nil
 		}

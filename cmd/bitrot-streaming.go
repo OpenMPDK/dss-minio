@@ -22,7 +22,7 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
-
+        "fmt"
 	"github.com/minio/minio/cmd/logger"
 )
 
@@ -113,6 +113,10 @@ func (b *streamingBitrotReader) Close() error {
 }
 
 func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
+        //if (globalDummy_read) {
+          //return len(buf), nil
+        //}
+        //fmt.Println("### ReadAt, buf_len, offset, volume, filePath, path", len(buf), offset, b.volume, b.filePath, b.disk.String())        
 	var err error
 	if offset%b.shardSize != 0 {
 		// Offset should always be aligned to b.shardSize
@@ -123,6 +127,7 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		// For the first ReadAt() call we need to open the stream for reading.
 		b.currOffset = offset
 		streamOffset := (offset/b.shardSize)*int64(b.h.Size()) + offset
+                //fmt.Println("### Calling from streamingBitrotReader->ReadAt, volume, filePath, path", b.volume, b.filePath, b.disk.String())
 		b.rc, err = b.disk.ReadFileStream(b.volume, b.filePath, streamOffset, b.tillOffset-streamOffset)
 		if ((b.rc == nil) || (err != nil)) {
 			logger.LogIf(context.Background(), err)
@@ -137,26 +142,32 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 	_, err = io.ReadFull(b.rc, b.hashBytes)
 	if err != nil {
 		logger.LogIf(context.Background(), err)
+                fmt.Println("!!! Read failed during hash read, err = ", err)
 		return 0, err
 	}
 	_, err = io.ReadFull(b.rc, buf)
 	if err != nil {
 		logger.LogIf(context.Background(), err)
+                fmt.Println("!!! Read failed during data read, err = ", err)
 		return 0, err
 	}
-	b.h.Write(buf)
+        if (!globalDummy_read) {
+	  b.h.Write(buf)
 
-	if !bytes.Equal(b.h.Sum(nil), b.hashBytes) {
+	  if (!globalDummy_read && !bytes.Equal(b.h.Sum(nil), b.hashBytes)) {
 		err = hashMismatchError{hex.EncodeToString(b.hashBytes), hex.EncodeToString(b.h.Sum(nil))}
 		logger.LogIf(context.Background(), err)
 		return 0, err
-	}
+	  }
+        }
+
 	b.currOffset += int64(len(buf))
 	return len(buf), nil
 }
 
 // Returns streaming bitrot reader implementation.
 func newStreamingBitrotReader(disk StorageAPI, volume, filePath string, tillOffset int64, algo BitrotAlgorithm, shardSize int64) *streamingBitrotReader {
+        //fmt.Println("##newStreamingBitrotReader, volume, filePath, tillOffset, shardSize", volume, filePath, tillOffset, shardSize)
 	h := algo.New()
 	return &streamingBitrotReader{
 		disk,

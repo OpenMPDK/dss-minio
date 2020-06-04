@@ -335,6 +335,10 @@ func CreateEndpoints(serverAddr string, args ...[]string) (string, EndpointList,
         if os.Getenv("MINIO_NKV_SHARED") != "" {
           globalNkvShared = true
         }
+        globalMinio_on_kv = false
+        if os.Getenv("MINIO_ON_KV") != "" {
+          globalMinio_on_kv = true
+        }
 
 	// Check whether serverAddr is valid for this host.
 	if err = CheckLocalServerAddr(serverAddr); err != nil {
@@ -468,7 +472,7 @@ func CreateEndpoints(serverAddr string, args ...[]string) (string, EndpointList,
 	}
 
 	// All endpoints are pointing to local host
-	if ((len(endpoints) == localEndpointCount) ) {
+	if ((!globalNkvShared && (len(endpoints) == localEndpointCount)) ) {
 		// If all endpoints have same port number, then this is XL setup using URL style endpoints.
 		if len(localPortSet) == 1 {
 			if len(localServerAddrSet) > 1 {

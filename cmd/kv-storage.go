@@ -456,7 +456,13 @@ func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int6
         startIndex := offset / kvMaxValueSize
         endIndex := (offset + length) / kvMaxValueSize
         index := startIndex
-        pool_buf := kvValuePool.Get().(*[]byte)
+        var pool_buf *[]byte
+        if (length > 4096) {
+          pool_buf = kvValuePool.Get().(*[]byte)
+        } else {
+          //fmt.Println("###Meta pool alloc", length)
+          pool_buf = kvValuePoolMeta.Get().(*[]byte)
+        }
         var blockOffset, blockLength int64
         switch {
           case startIndex == endIndex:
@@ -490,7 +496,11 @@ func (r *Reader) Close() error {
     return errFaultyDisk 
   }
   if (!r.is_freed) {
-    kvValuePool.Put(r.pool_buf)
+    if (r.length > 4096) {
+      kvValuePool.Put(r.pool_buf)
+    } else {
+      kvValuePoolMeta.Put(r.pool_buf)
+    }   
     r.is_freed = true
   }
 
@@ -499,7 +509,7 @@ func (r *Reader) Close() error {
 
 
 func (r *Reader) Read(p []byte) (n int, err error) {
- 
+        //fmt.Println("### NewReader_kv.Read, key, input_buffer_size, total_length, mount_point", r.key_name, len(p), r.length, r.offset, r.k.path )
         if (r == nil) {
           fmt.Println("### Error, null reader to read")
           return 0, errFaultyDisk
@@ -507,12 +517,13 @@ func (r *Reader) Read(p []byte) (n int, err error) {
         n = 0
         var bytes_copied int = 0
         var read_next_chunk bool = false
-
+        //r.valid_data = nil
         if (r.total_read >= r.length) {
 	  err = io.EOF
 	  return
         } else {
             if r.readIndex >= int64(len(r.valid_data)) {
+              //fmt.Println("### r.readIndex, r.valid_data len ::", r.readIndex, len(r.valid_data))
               read_next_chunk = true
             } else {
               remaining := int64(len(r.valid_data)) - r.readIndex
@@ -521,13 +532,50 @@ func (r *Reader) Read(p []byte) (n int, err error) {
                 r.readIndex += int64(bytes_copied)
                 r.total_read += int64(bytes_copied)
                 n = bytes_copied
+                //fmt.Println("### copied from leftover ::", n, r.readIndex, r.total_read, r.length)
                 if (r.total_read < r.length) {
                   read_next_chunk = true
                 } else {
                   return
-
                 }
               }
+
+              /*remaining := int64(len(r.valid_data)) - r.readIndex
+              if ((remaining > 0) && (int64(len(p)) > remaining)) {
+
+                if (!globalDummy_read || r.length <= 4096) {
+                  bytes_copied = copy(p[:remaining], r.valid_data[r.readIndex:])
+                  //bytes_copied = copy(p, r.valid_data[r.readIndex:len(p)])
+                } else {
+                  bytes_copied = int(remaining) 
+                }
+                r.readIndex += int64(bytes_copied)
+                r.total_read += int64(bytes_copied)
+                n = bytes_copied
+                r.valid_data = nil
+                
+                if ( n < len(p)) {
+                  r.index--
+                }
+                fmt.Println("### Done reading,buffer big:: ",n, len(p), r.readIndex, r.total_read, r.length, remaining, r.index, r.k.path)
+                return n, nil
+              } else {
+                if (int64(len(p)) <= remaining) {
+                  bytes_copied = copy(p, r.valid_data[r.readIndex:len(p)])
+                  r.readIndex += int64(bytes_copied)
+                  r.total_read += int64(bytes_copied)
+                  n = bytes_copied
+                  if (n < remaining) {
+                
+                  }
+                  //r.valid_data = nil
+                  //r.index--
+                  fmt.Println("### Done reading, buffer less::",n, len(p), r.readIndex, r.total_read, r.length, remaining, r.index, r.k.path)
+                  return n, nil
+                }
+                fmt.Println("### Continue reading next",n, len(p), r.total_read, r.length, remaining, r.index, r.k.path)
+                read_next_chunk = true
+              }*/
 
             }
         }
@@ -538,41 +586,94 @@ func (r *Reader) Read(p []byte) (n int, err error) {
             fmt.Println("Returning EOF from index !!", r.index, r.endIndex, r.total_read, r.length)
             return
           }
-          var blockOffset, blockLength int64
-          switch {
-            case r.startIndex == r.endIndex:
-              blockOffset = r.offset % r.kvMaxValueSize
-              blockLength = r.length
-            case r.index == r.startIndex:
-              blockOffset = r.offset % r.kvMaxValueSize
-              blockLength = r.kvMaxValueSize - blockOffset
-            case r.index == r.endIndex:
-              blockOffset = 0
-              blockLength = (r.offset + r.length) % r.kvMaxValueSize
-            default:
-              blockOffset = 0
-              blockLength = r.kvMaxValueSize
+          for {
+            var blockOffset, blockLength int64
+            switch {
+              case r.startIndex == r.endIndex:
+                blockOffset = r.offset % r.kvMaxValueSize
+                blockLength = r.length
+              case r.index == r.startIndex:
+                blockOffset = r.offset % r.kvMaxValueSize
+                blockLength = r.kvMaxValueSize - blockOffset
+              case r.index == r.endIndex:
+                blockOffset = 0
+                blockLength = (r.offset + r.length) % r.kvMaxValueSize
+              default:
+                blockOffset = 0
+                blockLength = r.kvMaxValueSize
+            }
+            id := r.entry.IDs[r.index]
+            //var data_b []byte
+            if (globalDummy_read && r.length > 4096) {
+              //data_b = *r.pool_buf
+              r.valid_data = *r.pool_buf
+              break;
+            } else {
+              if ((len(p) - n) >= int (r.kvMaxValueSize)) {
+                //fmt.Println("##### Passing input buffer to kv", n, len(p), len(p) - n, r.kvMaxValueSize, r.k.path) 
+                data_bl, err := r.k.kv.Get(r.k.DataKey(id), p[n:n+int(r.kvMaxValueSize)])
+                if err != nil {
+                  fmt.Println("###Error during kv get", r.key_name, r.k.DataKey(id), err)
+                  return n, err
+                }
+                if (len(data_bl) == 0) {
+                  fmt.Println("##### KV GET failed with 0 length object, copied sofar, buff_len, key ::", n, len(p), r.k.DataKey(id))
+                  os.Exit(1)
+                }
+                r.index++
+                r.readIndex = 0
+                valid_len := len(data_bl[blockOffset + r.readIndex : blockOffset+blockLength])
+                if (r.readIndex != 0) {
+                  fmt.Println("##### Increase buf to r.readIndex = ", r.readIndex) 
+                  p = data_bl[blockOffset + r.readIndex : blockOffset+blockLength]
+                  r.readIndex = 0
+                }
+                n += valid_len
+                //r.readIndex += len(data_bl)
+                r.total_read += int64(valid_len)
+                //if (n == len(p)) {
+                  //return n, nil
+                //}
+                if ((len(p) - n) < int (r.kvMaxValueSize)) {
+                  r.valid_data = nil
+                  return n, nil
+                }
+                
+                continue
+              } else {
+                //fmt.Println("???? Passing poolBuf to kv", len(p), n, len(p) - n, r.kvMaxValueSize, r.k.path)
+                data_bl, err := r.k.kv.Get(r.k.DataKey(id), *r.pool_buf)
+                if err != nil {
+                  fmt.Println("###Error during kv get", r.key_name, r.k.DataKey(id), err)
+                  return n, err
+                }
+
+                //data_b = data_bl
+                r.index++
+                r.valid_data = data_bl[blockOffset : blockOffset+blockLength]
+                if (len(r.valid_data) == 0) {
+                  fmt.Println("##### KV GET failed with 0 length object, key = ", r.k.DataKey(id))
+                  os.Exit(1)
+                }
+                r.readIndex = 0
+
+                break;
+              }
+            }
           }
-          id := r.entry.IDs[r.index]
-          data_b, err := r.k.kv.Get(r.k.DataKey(id), *r.pool_buf)
-          if err != nil {
-            fmt.Println("###Error during kv get", r.key_name, err)
-            
-            return n, err
-          }
-          r.index++
-          r.valid_data = data_b[blockOffset : blockOffset+blockLength]
-          if (len(r.valid_data) == 0) {
-            fmt.Println("##### KV GET failed with 0 length object, key = ", r.k.DataKey(id))
-            os.Exit(1)            
-          }
-          r.readIndex = 0
         }
-	
-	n = copy(p[bytes_copied:], r.valid_data[r.readIndex:])
-	r.readIndex += int64(n)
-        r.total_read += int64(n)
-        n += bytes_copied
+        var num_bytes int = 0
+	if (!globalDummy_read || r.length <= 4096) {
+	  //n = copy(p[bytes_copied:], r.valid_data[r.readIndex:])
+	  num_bytes = copy(p[n:], r.valid_data[r.readIndex:])
+        } else {
+          num_bytes = len(p) - bytes_copied
+        }
+        //r.readIndex = 0
+	r.readIndex += int64(num_bytes)
+        r.total_read += int64(num_bytes)
+        n += num_bytes
+        //r.valid_data = nil
 	return
 }
 
@@ -586,11 +687,53 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 	if err != nil {
 		return nil, err
 	}
-        r_io := NewReader_kv(nskey, k, entry, offset, length)
-        if (r_io == nil) {
-          return r_io, errFaultyDisk
-        } else {       
-          return r_io, nil
+        if (use_custome_reader) {
+          r_io := NewReader_kv(nskey, k, entry, offset, length)
+          if (r_io == nil) {
+            return r_io, errFaultyDisk
+          } else {       
+            return r_io, nil
+          }
+        } else {
+
+	  r, w := io.Pipe()
+	  go func() {
+		bufp := kvValuePool.Get().(*[]byte)
+		defer kvValuePool.Put(bufp)
+		kvMaxValueSize := int64(kvMaxValueSize)
+		startIndex := offset / kvMaxValueSize
+		endIndex := (offset + length) / kvMaxValueSize
+		for index := startIndex; index <= endIndex; index++ {
+			var blockOffset, blockLength int64
+			switch {
+			case startIndex == endIndex:
+				blockOffset = offset % kvMaxValueSize
+				blockLength = length
+			case index == startIndex:
+				blockOffset = offset % kvMaxValueSize
+				blockLength = kvMaxValueSize - blockOffset
+			case index == endIndex:
+				blockOffset = 0
+				blockLength = (offset + length) % kvMaxValueSize
+			default:
+				blockOffset = 0
+				blockLength = kvMaxValueSize
+			}
+			if blockLength == 0 {
+				break
+			}
+			id := entry.IDs[index]
+			data, err := k.kv.Get(k.DataKey(id), *bufp)
+			if err != nil {
+				w.CloseWithError(err)
+				return
+			}
+
+			w.Write(data[blockOffset : blockOffset+blockLength])
+		}
+		w.Close()
+	  }()
+	  return ioutil.NopCloser(r), nil
         }
 
 }
@@ -602,7 +745,7 @@ func (k *KVStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) er
 	if err := k.verifyVolume(dstVolume); err != nil {
 		return err
 	}
-	rename := func(src, dst string) error {
+	rename := func(src, dst string, data_chunk_delete bool) error {
 		//bufp := kvValuePool.Get().(*[]byte)
 		//defer kvValuePool.Put(bufp)
                 bufp := kvValuePoolMeta.Get().(*[]byte)
@@ -632,11 +775,23 @@ func (k *KVStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) er
 		if err != nil {
 			return err
 		}
+                if (data_chunk_delete) {
+                  for _, id := range entry.IDs {
+                    k.kv.Delete(k.DataKey(id))
+                  }
+                }
+
 		err = k.kv.Delete(src)
 		return err
 	}
+
+        var del_chunk bool = true
+        if (srcVolume == minioMetaTmpBucket) {
+          del_chunk = false
+        }
+
 	if !strings.HasSuffix(srcPath, slashSeparator) && !strings.HasSuffix(dstPath, slashSeparator) {
-		return rename(pathJoin(srcVolume, srcPath), pathJoin(dstVolume, dstPath))
+		return rename(pathJoin(srcVolume, srcPath), pathJoin(dstVolume, dstPath), del_chunk)
 	}
 	if strings.HasSuffix(srcPath, slashSeparator) && strings.HasSuffix(dstPath, slashSeparator) {
 		entries, err := k.ListDirForRename(srcVolume, srcPath, -1)
@@ -644,7 +799,7 @@ func (k *KVStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) er
 			return err
 		}
 		for _, entry := range entries {
-			if err = rename(pathJoin(srcVolume, srcPath, entry), pathJoin(dstVolume, dstPath, entry)); err != nil {
+			if err = rename(pathJoin(srcVolume, srcPath, entry), pathJoin(dstVolume, dstPath, entry), del_chunk); err != nil {
 				return err
 			}
 		}
@@ -695,7 +850,6 @@ func (k *KVStorage) DeleteFile(volume string, path string) (err error) {
 	if err != nil {
 		return err
 	}
-
 	for _, id := range entry.IDs {
 		k.kv.Delete(k.DataKey(id))
 	}
@@ -735,6 +889,7 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
 	if err != nil {
 		return nil, err
 	}
+        //fmt.Println("### Calling from ReadAll, volume, filePath, path", volume, filePath, k.path)
 	r, err := k.ReadFileStream(volume, filePath, 0, fi.Size)
 	if (r == nil || err != nil) {
                 fmt.Println("??? Got error while ReadFileStream ???", err)
