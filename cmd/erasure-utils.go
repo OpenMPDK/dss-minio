@@ -20,10 +20,67 @@ import (
 	"bytes"
 	"context"
 	"io"
-
+        "sync/atomic"
+        "fmt"
+        "sync"
 	"github.com/klauspost/reedsolomon"
 	"github.com/minio/minio/cmd/logger"
 )
+
+type kvPoolECPoolType struct {
+       *sync.Pool
+       count uint64
+}
+
+func (k *kvPoolECPoolType) Get() interface{} {
+       atomic.AddUint64(&k.count, 1)
+       return k.Pool.Get()
+}
+
+func (k *kvPoolECPoolType) Put(x interface{}) {
+       //fmt.Println("## EC-Pool Put called, ", k.count)
+       pool_cnt := atomic.LoadUint64(&k.count)
+       if (pool_cnt > 0) {
+         atomic.AddUint64(&k.count, ^uint64(0))
+         k.Pool.Put(x)
+       }
+}
+
+func (k *kvPoolECPoolType) PrintCount() {
+       fmt.Println("## EC-Pool count", k.count)
+}
+
+var kvPoolEC *kvPoolECPoolType = nil
+
+func initECPool() {
+  fmt.Println("### Creating EC Pool with object size, EC Block size = ",customECpoolObjSize, blockSizeV1)
+  kvPoolEC = &kvPoolECPoolType{
+       Pool: &sync.Pool{
+               New: func() interface{} {
+                       b := make([]byte, customECpoolObjSize)
+                       return b
+               },
+        },
+  }
+
+}
+
+
+func  poolAlloc(size int64) []byte {
+  return kvPoolEC.Get().([]byte)
+}
+
+func releasePoolBuf(bufs [][]byte, dataBlocks int, shardSize int64) {
+	for rev_index, _ := range bufs[:dataBlocks] {
+        	rev_index = len(bufs[:dataBlocks]) - 1 - rev_index
+                block := bufs[rev_index]
+                if block != nil {
+                      kvPoolEC.Put(block)
+                }
+        }
+
+}
+
 
 // getDataBlockLen - get length of data blocks from encoded blocks.
 func getDataBlockLen(enBlocks [][]byte, dataBlocks int) int {

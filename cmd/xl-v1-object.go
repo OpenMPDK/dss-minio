@@ -31,6 +31,7 @@ import (
 	"github.com/minio/minio/pkg/mimedb"
 )
 
+
 // list all errors which can be ignored in object operations.
 var objectOpIgnoredErrs = append(baseIgnoredErrs, errDiskAccessDenied)
 
@@ -166,7 +167,9 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 			}
 			nsUnlocker = lock.RUnlock
 		}
-	}
+	} else {
+          //fmt.Println("### Zero lock Get ###")
+        }
 
 	if err = checkGetObjArgs(ctx, bucket, object); err != nil {
 		nsUnlocker()
@@ -317,6 +320,7 @@ func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startO
 	}
 
 	var totalBytesRead int64
+        //fmt.Println("### Creating EC, data_blocks, parity_blocks, block_size = ", xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
 	erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
 	if err != nil {
 		return toObjectErr(err, bucket, object)
@@ -335,8 +339,8 @@ func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startO
 		if partLength > (length - totalBytesRead) {
 			partLength = length - totalBytesRead
 		}
-                //fmt.Println("### partIndex, partName, partSize, partLength, partOffset", partIndex, partName, partSize, partLength, partOffset)
-		tillOffset := erasure.ShardFileTillOffset(partOffset, partLength, partSize)
+                tillOffset := erasure.ShardFileTillOffset(partOffset, partLength, partSize)
+                //fmt.Println("### partIndex, partName, partSize, partLength, partOffset, tillOffset, ec.shard = ", partIndex, partName, partSize, partLength, partOffset, tillOffset, erasure.ShardSize())
 		// Get the checksums of the current part.
 		readers := make([]io.ReaderAt, len(onlineDisks))
 		for index, disk := range onlineDisks {

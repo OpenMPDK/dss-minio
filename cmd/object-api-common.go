@@ -20,15 +20,14 @@ import (
 	"context"
 	"path"
 	"sync"
-
+        "os"
+        "fmt"
+        "strconv"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/minio/cmd/logger"
 )
 
 const (
-	// Block size used for all internal operations version 1.
-	blockSizeV1 = 10 * humanize.MiByte
-
 	// Staging buffer read size for all internal operations version 1.
 	readSizeV1 = 1 * humanize.MiByte
 
@@ -39,6 +38,8 @@ const (
 	emptyETag = "d41d8cd98f00b204e9800998ecf8427e"
 )
 
+var blockSizeV1 int64 = 10 * humanize.MiByte
+var customECpoolObjSize int64 = 0
 // Global object layer mutex, used for safely updating object layer.
 var globalObjLayerMutex *sync.RWMutex
 
@@ -51,6 +52,31 @@ var globalCacheObjectAPI CacheObjectLayer
 func init() {
 	// Initialize this once per server initialization.
 	globalObjLayerMutex = &sync.RWMutex{}
+        if v := os.Getenv("MINIO_EC_BLOCK_SIZE"); v != "" {
+                var err error
+                globalECBlockSizeKB, err = strconv.ParseInt(v, 10, 64)
+                if err != nil {
+                        fmt.Printf("### Wrong value of MINIO_EC_BLOCK_SIZE = %s", v)
+                        return 
+                }
+                blockSizeV1Old := blockSizeV1
+                blockSizeV1 = globalECBlockSizeKB
+                fmt.Printf("### Resetting EC Block size from %d to %d", blockSizeV1Old, blockSizeV1)
+        }
+
+        if v1 := os.Getenv("MINIO_EC_POOL_OBJECT_SIZE"); v1 != "" {
+                var err error
+                customECpoolObjSize, err = strconv.ParseInt(v1, 10, 64)
+                if err != nil {
+                        fmt.Printf("### Wrong value of MINIO_EC_BLOCK_SIZE = %s", v1)
+                        return
+                }
+                
+                fmt.Printf("### EC Pool object size = %d", customECpoolObjSize)
+        }
+
+        
+
 }
 
 // Checks if the object is a directory, this logic uses

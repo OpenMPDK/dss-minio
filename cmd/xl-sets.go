@@ -323,7 +323,9 @@ func (s *xlSets) syncSharedVols() {
   	}
 
   	for {
-        	for _, set := range s.sets {
+                kvPoolEC.PrintCount()
+                if (globalNkvShared) {
+        	  for _, set := range s.sets {
         		for _, disk := range set.getDisks() {
                 		if disk == nil {
                         		continue
@@ -331,7 +333,8 @@ func (s *xlSets) syncSharedVols() {
 	        		_ = disk.SyncVolumes()
             
                 	}
-        	}
+        	  }
+                }
         	time.Sleep(time.Duration(init_multi) * time.Second)
   	}
 }
@@ -357,7 +360,7 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
 
 	// Initialize byte pool once for all sets, bpool size is set to
 	// setCount * drivesPerSet with each memory upto blockSizeV1.
-	bp := bpool.NewBytePoolCap(setCount*drivesPerSet, blockSizeV1, blockSizeV1*2)
+	bp := bpool.NewBytePoolCap(setCount*drivesPerSet, int(blockSizeV1), int(blockSizeV1*2))
 
 	for i := 0; i < len(format.XL.Sets); i++ {
 		s.xlDisks[i] = make([]StorageAPI, drivesPerSet)
@@ -377,10 +380,37 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
 	// Start the disk monitoring and connect routine.
 	go s.monitorAndConnectEndpoints(defaultMonitorConnectEndpointInterval)
 
-        //Sync vols created by other minio instances in case of shared storage mode
-        if (globalNkvShared) {
-          go s.syncSharedVols()
+        if (customECpoolObjSize == 0) {
+          scData, _ := getRedundancyCount(standardStorageClass, s.drivesPerSet)
+          customECpoolObjSize = ceilFrac(blockSizeV1, int64(scData))
         }
+
+        globalDontUseECMemPool = false
+        if os.Getenv("MINIO_DONT_USE_EC_MEM_POOL") != "" {
+          fmt.Println("### Setting up *not to* use EC mem-pool.. ###")
+          globalDontUseECMemPool = true
+        }
+
+        if (!globalDontUseECMemPool) {
+          fmt.Println("### Setting up to *use* EC mem-pool.. ###")
+          initECPool()
+        }
+
+        //Sync vols created by other minio instances in case of shared storage mode
+        go s.syncSharedVols()
+ 
+        globalSC_read = false
+        if os.Getenv("MINIO_ENABLE_SC_READ") != "" {
+          fmt.Println("### Setting up for SC read.. ###")
+          globalSC_read = true
+        }
+
+        globalNolock_read = false
+        if os.Getenv("MINIO_ENABLE_NO_LOCK_READ") != "" {
+          fmt.Println("### Setting up for no Lock during read.. ###")
+          globalNolock_read = true
+        }
+       
 	return s, nil
 }
 
@@ -733,57 +763,88 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
 			if disk == nil {
 				continue
 			}
-			wg.Add(1)
-			go func(index int, disk StorageAPI) {
+                        if (!globalMinio_on_kv) {
+			  wg.Add(1)
+			  go func(index int, disk StorageAPI) {
 				defer wg.Done()
 				diskEntries[index], _ = disk.ListDir(bucket, prefixDir, -1)
-			}(index, disk)
+			  }(index, disk)
+                        } else {
+                          var err error
+                          diskEntries[0], err = disk.ListDir(bucket, prefixDir, -1)
+                          if (err == nil) {
+                            break;
+                          }
+                        }
 		}
-
-		wg.Wait()
+                if (!globalMinio_on_kv) {
+		  wg.Wait()
+                }
 
 		// Find elements in entries which are not in mergedEntries
 		for _, entries := range diskEntries {
 			var newEntries []string
 
 			for _, entry := range entries {
-				idx := sort.SearchStrings(mergedEntries, entry)
-				// if entry is already present in mergedEntries don't add.
-				if idx < len(mergedEntries) && mergedEntries[idx] == entry {
+                                if (!globalMinio_on_kv) {
+				  idx := sort.SearchStrings(mergedEntries, entry)
+				  // if entry is already present in mergedEntries don't add.
+				  if idx < len(mergedEntries) && mergedEntries[idx] == entry {
 					continue
-				}
+				  }
+                                }
 				newEntries = append(newEntries, entry)
 			}
 
 			if len(newEntries) > 0 {
 				// Merge the entries and sort it.
 				mergedEntries = append(mergedEntries, newEntries...)
-				sort.Strings(mergedEntries)
+                                if (!globalMinio_on_kv) {
+				  sort.Strings(mergedEntries)
+                                }
 			}
 		}
 
 		return mergedEntries
 	}
-
+        //To remove duplicates when on KV
+        //encountered := map[string]bool{}
+        //encountered := make(map[string]bool)
 	// listDir - lists all the entries at a given prefix and given entry in the prefix.
 	listDir := func(bucket, prefixDir, prefixEntry string) (mergedEntries []string, delayIsLeaf bool) {
+                //encountered := make(map[string]bool)
 		for _, set := range sets {
 			var newEntries []string
 			// Find elements in entries which are not in mergedEntries
 			for _, entry := range listDirInternal(bucket, prefixDir, prefixEntry, set.getLoadBalancedDisks()) {
-				idx := sort.SearchStrings(mergedEntries, entry)
-				// if entry is already present in mergedEntries don't add.
-				if idx < len(mergedEntries) && mergedEntries[idx] == entry {
+                                if (!globalNkvShared) {
+				  idx := sort.SearchStrings(mergedEntries, entry)
+				  // if entry is already present in mergedEntries don't add.
+				  if idx < len(mergedEntries) && mergedEntries[idx] == entry {
 					continue
-				}
+				  }
+                                } else {
+                                  /*if encountered[entry] == true {
+                                    continue
+                                  }*/
+                                }
 				newEntries = append(newEntries, entry)
+                                /*if (globalMinio_on_kv) {
+                                  encountered[entry] = true
+                                }*/
 			}
 
 			if len(newEntries) > 0 {
 				// Merge the entries and sort it.
 				mergedEntries = append(mergedEntries, newEntries...)
-				sort.Strings(mergedEntries)
+                                if (!globalMinio_on_kv) {
+				  sort.Strings(mergedEntries)
+                                }
 			}
+                        //Assumption is for NKV shared both EC set going to same subsystem but from different path
+                        if (globalNkvShared) {
+                          break;
+                        }
 		}
 		return filterListEntries(bucket, prefixDir, mergedEntries, prefixEntry, isLeaf)
 	}

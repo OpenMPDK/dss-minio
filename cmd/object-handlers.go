@@ -18,7 +18,7 @@ package cmd
 
 import (
         //"bytes"
-        "os"
+        //"os"
 	"context"
 	"crypto/hmac"
 	"encoding/binary"
@@ -33,7 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
+        //"fmt"
 	"github.com/gorilla/mux"
 	miniogo "github.com/minio/minio-go"
 	"github.com/minio/minio-go/pkg/encrypt"
@@ -248,8 +248,13 @@ func (api objectAPIHandlers) SelectObjectContentHandler(w http.ResponseWriter, r
 func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Request) {
 
         globalDummy_read = false
-        if os.Getenv("MINIO_ENABLE_DUMMY_READ") != "" {
+        /*if os.Getenv("MINIO_ENABLE_DUMMY_READ") != "" {
           globalDummy_read = true
+        }*/
+
+        var lock = noLock
+        if !globalNolock_read {
+        	lock = readLock
         }
 
 	ctx := newContext(r, w, "GetObject")
@@ -345,14 +350,32 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	gr, err := getObjectNInfo(ctx, bucket, object, rs, r.Header, readLock, opts)
-	if err != nil {
-		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
-		return
-	}
-	defer gr.Close()
+        var objInfo ObjectInfo
+        var err_kv, err_bl error
+        var gr *GetObjectReader
 
-	objInfo := gr.ObjInfo
+        if (globalSC_read) {
+          getObjectInfo := objectAPI.GetObjectInfo
+          if api.CacheAPI() != nil {
+                getObjectInfo = api.CacheAPI().GetObjectInfo
+          }
+
+          objInfo, err_kv = getObjectInfo(ctx, bucket, object, opts)
+          if err_kv != nil {
+          	writeErrorResponse(ctx, w, toAPIError(ctx, err_kv), r.URL, guessIsBrowserReq(r))   
+                return
+          }
+        } else {
+          //fmt.Println("Going through the SLOW path..!!")
+	  gr, err_bl = getObjectNInfo(ctx, bucket, object, rs, r.Header, lock, opts)
+	  if err_bl != nil {
+	  	writeErrorResponse(ctx, w, toAPIError(ctx, err_bl), r.URL, guessIsBrowserReq(r))
+		return
+	  }
+	  defer gr.Close()
+
+	  objInfo = gr.ObjInfo
+        }
 
 	if objectAPI.IsEncryptionSupported() {
 		objInfo.UserDefined = CleanMinioInternalMetadataKeys(objInfo.UserDefined)
@@ -397,13 +420,35 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 	// Write object content to response body
         //block := make([]byte, gr.length)
 
-	if _, err = io.Copy(httpWriter, gr); err != nil {
-	//if _, err = io.Copy(httpWriter, bytes.NewReader(block)); err != nil {
+        if (globalSC_read) {
+          off, length, err := rs.GetOffsetLength(objInfo.Size)
+          if err != nil {
+          	writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r)) 
+          }
+          getObject_fast := objectAPI.GetObject
+          if api.CacheAPI() != nil {
+                getObject_fast = api.CacheAPI().GetObject
+          }
+          //fmt.Println("Going through the FAST path..")
+          err = getObject_fast(ctx, bucket, object, off, length, httpWriter, "", opts)
+          if (err != nil) {
+                if !httpWriter.HasWritten() && !statusCodeWritten { // write error response only if no data or headers has been written to client yet
+                        writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
+                }
+                return
+
+          }
+      		
+        } else {
+      
+	  if _, err = io.Copy(httpWriter, gr); err != nil {
+	  //if _, err = io.Copy(httpWriter, bytes.NewReader(block)); err != nil {
 		if !httpWriter.HasWritten() && !statusCodeWritten { // write error response only if no data or headers has been written to client yet
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		}
 		return
-	}
+	  }
+        }
 
 	if err = httpWriter.Close(); err != nil {
 		if !httpWriter.HasWritten() && !statusCodeWritten { // write error response only if no data or headers has been written to client yet

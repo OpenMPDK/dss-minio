@@ -166,6 +166,10 @@ var (
         globalNkvShared bool 
         globalMinio_on_kv bool 
         globalDummy_read bool 
+        globalSC_read bool 
+        globalNolock_read bool 
+        globalDontUseECMemPool bool 
+        globalECBlockSizeKB int64 
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()

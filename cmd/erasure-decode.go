@@ -102,7 +102,12 @@ func (p *parallelReader) Read() ([][]byte, error) {
 			if p.buf[i] == nil {
 				// Reading first time on this disk, hence the buffer needs to be allocated.
 				// Subsequent reads will re-use this buffer.
-				p.buf[i] = make([]byte, p.shardSize)
+                                if (globalDontUseECMemPool) {
+				  p.buf[i] = make([]byte, p.shardSize)
+                                } else {
+				  p.buf[i] = poolAlloc(p.shardSize) 
+                                }
+                                //fmt.Println("### Allocated for EC chunk read, index, shardsize, buf_len, offset = ", i, p.shardSize, len(p.buf[i]), p.offset)
 			}
 			// For the last shard, the shardsize might be less than previous shard sizes.
 			// Hence the following statement ensures that the buffer size is reset to the right size.
@@ -153,6 +158,9 @@ func (e Erasure) Decode(ctx context.Context, writer io.Writer, readers []io.Read
 	endBlock := (offset + length) / e.blockSize
 
 	var bytesWritten int64
+        var bufs [][]byte
+        var err error
+
 	for block := startBlock; block <= endBlock; block++ {
 		var blockOffset, blockLength int64
 		switch {
@@ -170,27 +178,40 @@ func (e Erasure) Decode(ctx context.Context, writer io.Writer, readers []io.Read
 			blockLength = e.blockSize
 		}
 		if blockLength == 0 {
-                        fmt.Println("### Breaking from blocklength = 0") 
 			break
 		}
-                //fmt.Println("### block, startBlock, endBlock, e.blockSize, e.dataBlocks, offset, length, blockOffset, blockLength::", block, startBlock, endBlock, e.blockSize, e.dataBlocks, offset, length, blockOffset, blockLength)
-		bufs, err := reader.Read()
+		bufs, err = reader.Read()
+                
 		if err != nil {
                         fmt.Println("### Returning on read failure, err =", err)
+                        if (!globalDontUseECMemPool) {
+                          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+                        }
 			return err
 		}
 		if err = e.DecodeDataBlocks(bufs); err != nil {
 			logger.LogIf(ctx, err)
                         fmt.Println("### Returning on decode failure, err =", err)
+                        if (!globalDontUseECMemPool) {
+                          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+                        }
 			return err
 		}
 		n, err := writeDataBlocks(ctx, writer, bufs, e.dataBlocks, blockOffset, blockLength)
 		if err != nil {
                         fmt.Println("### Returning on writedb failure, err =", err)
+                        if (!globalDontUseECMemPool) {
+                          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+                        }
 			return err
 		}
 		bytesWritten += n
+
 	}
+        if (!globalDontUseECMemPool) {
+          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+        }
+
 	if bytesWritten != length {
 		logger.LogIf(ctx, errLessData)
 		return errLessData

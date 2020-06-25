@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
         //"runtime"
+        //"runtime/debug"
         "sync/atomic"
         //"strconv"
 )
@@ -341,7 +342,7 @@ func (k *KVStorage) ListDir(volume, dirPath string, count int) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-        //fmt.Println("Num list entries from ListDir = ", len(entries))
+        //fmt.Println("Num list entries from ListDir = ", len(entries), entries)
 	return entries, nil
 }
 
@@ -481,8 +482,8 @@ func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int6
         id := entry.IDs[index]
         data_b, err := k.kv.Get(k.DataKey(id), *pool_buf)
         if err != nil {
-          fmt.Println("###Error during kv get", key, err)
-          //return nil
+          //debug.PrintStack()
+          fmt.Println("###Error during kv get", key, k.DataKey(id), entry.IDs, err)
           return nil
         }
 
@@ -786,7 +787,7 @@ func (k *KVStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) er
 	}
 
         var del_chunk bool = true
-        if (srcVolume == minioMetaTmpBucket) {
+        if ((srcVolume == minioMetaTmpBucket) || (srcVolume == minioMetaMultipartBucket)) {
           del_chunk = false
         }
 
@@ -900,7 +901,7 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
 	}
 	r_b, err_r := ioutil.ReadAll(r)
 	if err_r != nil {
-	  fmt.Println("??? Got error during read ???", err_r)
+	  fmt.Println("??? Got error during read ???", err_r, pathJoin(volume, filePath))
           r.Close()
           return nil, err_r
 	}
