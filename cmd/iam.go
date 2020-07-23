@@ -23,7 +23,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+        "fmt"
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/minio/minio-go/pkg/set"
 	"github.com/minio/minio/cmd/logger"
@@ -603,6 +603,7 @@ func reloadPolicies(objectAPI ObjectLayer, prefix string, cannedPolicyMap map[st
 		var err error
 		lo, err = objectAPI.ListObjects(context.Background(), minioMetaBucket, prefix, marker, "/", 1000)
 		if err != nil {
+                        fmt.Println("### objectAPI.ListObjects failed : ", minioMetaBucket, err)
 			return err
 		}
 		marker = lo.NextMarker
@@ -715,12 +716,15 @@ func (sys *IAMSys) refresh(objAPI ObjectLayer) error {
 		}
 	} else {
 		if err := reloadPolicies(objAPI, iamConfigPoliciesPrefix, iamCannedPolicyMap); err != nil {
+                        fmt.Println("### Error during reloadPolicies ###")
 			return err
 		}
 		if err := reloadUsers(objAPI, iamConfigUsersPrefix, iamUsersMap, iamPolicyMap); err != nil {
+                        fmt.Println("### Error during reloadUsers 1 ###")
 			return err
 		}
 		if err := reloadUsers(objAPI, iamConfigSTSPrefix, iamUsersMap, iamPolicyMap); err != nil {
+                        fmt.Println("### Error during reloadUsers 2 ###")
 			return err
 		}
 	}

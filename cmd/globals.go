@@ -170,6 +170,7 @@ var (
         globalNolock_read bool 
         globalDontUseECMemPool bool 
         globalECBlockSizeKB int64 
+        globalInstanceHost string
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()

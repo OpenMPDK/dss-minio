@@ -301,7 +301,16 @@ func NewEndpointList(args ...string) (endpoints EndpointList, err error) {
 		uniqueArgs.Add(arg)
                 if (globalNkvShared) {
                   if endpoint.IsLocal {
-                    globalEndpointsLocal = append(globalEndpointsLocal, endpoint)
+                    if (globalInstanceHost != "") {
+                      if (endpoint.Host == globalInstanceHost) {
+                        fmt.Println("### Adding host, endpoint = ", endpoint.Host, endpoint)
+                        globalEndpointsLocal = append(globalEndpointsLocal, endpoint)
+                      } else {
+                        fmt.Println("### Ignoring endpoint:: host_to_accept, endpoint.Host, endpoint = ", globalInstanceHost, endpoint.Host, endpoint)
+                      }
+                    } else {
+                      globalEndpointsLocal = append(globalEndpointsLocal, endpoint)
+                    }
                   } 
                 }
 		endpoints = append(endpoints, endpoint)
@@ -339,6 +348,12 @@ func CreateEndpoints(serverAddr string, args ...[]string) (string, EndpointList,
         if os.Getenv("MINIO_ON_KV") != "" {
           globalMinio_on_kv = true
         }
+        globalInstanceHost = ""
+        if v := os.Getenv("MINIO_INSTANCE_HOST_PORT"); v != "" {
+          globalInstanceHost = v
+          fmt.Printf("### EC endpoint Instance host = %s\n", globalInstanceHost)
+        }
+
 
 	// Check whether serverAddr is valid for this host.
 	if err = CheckLocalServerAddr(serverAddr); err != nil {

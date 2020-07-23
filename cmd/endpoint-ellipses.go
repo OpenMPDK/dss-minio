@@ -289,42 +289,56 @@ func createServerEndpoints(serverAddr string, args ...string) (string, EndpointL
           var numDrivesECSet int = 0
           var numMinioInstances uint64 = 1
 
-          if v := os.Getenv("MINIO_PER_HOST_INSTANCE_COUNT"); v != "" {
-                numMinioInstances, err = strconv.ParseUint(v, 10, 64)
-                if err != nil {
-                  numMinioInstances = 1
-                }
-                fmt.Printf("### Number Minio instances per host = %d\n", numMinioInstances) 
-          }
-
-          totalDrives := uint64(len(globalEndpointsLocal))
-          totalUniqueDrives := totalDrives/numMinioInstances
-
-          if (customSetDriveCount > 0) {
-            if (totalUniqueDrives % customSetDriveCount != 0) {
-              fmt.Printf("Invalid set drive count (%d), should be divisible to the total number of shared drives(%d)\n", customSetDriveCount, totalDrives)
-              if (customSetDriveCount >= totalUniqueDrives) {
-                
-                fmt.Println("Seems like custom set drive count provided is more than the available drives, making it same as number of unique drives = ", totalUniqueDrives)
-                customSetDriveCount = totalUniqueDrives
-              } else {             
-                return serverAddr, nil, -1, 0, 0, uiErrInvalidErasureSetSize(nil)
-              }
-            }
-            numECSets = (int)((totalUniqueDrives/customSetDriveCount)* numMinioInstances)
-            numDrivesECSet = (int) (customSetDriveCount)
-            
-          } else {
-
+          if (globalInstanceHost != "") {
+            totalUniqueDrives := uint64(len(globalEndpointsLocal))
             for _, s := range setSizes {
               if totalUniqueDrives%s == 0 {
-                numECSets = (int)((totalUniqueDrives/s)* numMinioInstances)
+                numECSets = (int)(totalUniqueDrives/s)
                 numDrivesECSet = (int) (s)
                 break
               }
             }
 
-          }          
+          } else {
+
+            if v := os.Getenv("MINIO_PER_HOST_INSTANCE_COUNT"); v != "" {
+                numMinioInstances, err = strconv.ParseUint(v, 10, 64)
+                if err != nil {
+                  numMinioInstances = 1
+                }
+                fmt.Printf("### Number Minio instances per host = %d\n", numMinioInstances) 
+            }
+
+            totalDrives := uint64(len(globalEndpointsLocal))
+            totalUniqueDrives := totalDrives/numMinioInstances
+
+            if (customSetDriveCount > 0) {
+              if (totalUniqueDrives % customSetDriveCount != 0) {
+                fmt.Printf("Invalid set drive count (%d), should be divisible to the total number of shared drives(%d)\n", customSetDriveCount, totalDrives)
+                if (customSetDriveCount >= totalUniqueDrives) {
+                
+                  fmt.Println("Seems like custom set drive count provided is more than the available drives, making it same as number of unique drives = ", totalUniqueDrives)
+                  customSetDriveCount = totalUniqueDrives
+                } else {             
+                  return serverAddr, nil, -1, 0, 0, uiErrInvalidErasureSetSize(nil)
+                }
+              }
+              numECSets = (int)((totalUniqueDrives/customSetDriveCount)* numMinioInstances)
+              numDrivesECSet = (int) (customSetDriveCount)
+            
+            } else {
+
+              for _, s := range setSizes {
+                if totalUniqueDrives%s == 0 {
+                  numECSets = (int)((totalUniqueDrives/s)* numMinioInstances)
+                  numDrivesECSet = (int) (s)
+                  break
+                }
+              }
+
+            }
+          }
+          fmt.Printf("### Minio EC, numECSets = %d, numDrivesECSet = %d", numECSets, numDrivesECSet)
 	  return serverAddr, endpoints, setupType, numECSets, numDrivesECSet, nil
 	  //return serverAddr, endpoints, setupType, len(setArgs), len(setArgs[0]), nil
         }

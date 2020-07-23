@@ -181,6 +181,7 @@ func (k *KVStorage) MakeVol(volume string) (err error) {
 }
 
 func (k *KVStorage) ListVols() (vols []VolInfo, err error) {
+        //fmt.Println("### ListVols called ###")
 	k.volumesMu.Lock()
 	defer k.volumesMu.Unlock()
 	if k.volumes == nil {
@@ -211,6 +212,7 @@ func (k *KVStorage) StatVol(volume string) (vol VolInfo, err error) {
 		}
 	}
 	for _, vol := range k.volumes.VolInfos {
+                //fmt.Println("### StatVol::", vol.Name, volume)
 		if vol.Name == volume {
 			return VolInfo{vol.Name, vol.Created}, nil
 		}
@@ -340,9 +342,10 @@ func (k *KVStorage) ListDir(volume, dirPath string, count int) ([]string, error)
 
 	entries, err := k.kv.List(pathJoin(volume, dirPath), *bufp)
 	if err != nil {
+                fmt.Println("### Error during kv.List = ", volume, dirPath, err)
 		return nil, err
 	}
-        //fmt.Println("Num list entries from ListDir = ", len(entries), entries)
+        //fmt.Println("## Num list entries from ListDir = ", volume, dirPath, len(entries), entries)
 	return entries, nil
 }
 

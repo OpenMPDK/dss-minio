@@ -323,7 +323,9 @@ func (s *xlSets) syncSharedVols() {
   	}
 
   	for {
-                kvPoolEC.PrintCount()
+                if (!globalDontUseECMemPool) {
+                  kvPoolEC.PrintCount()
+                }
                 if (globalNkvShared) {
         	  for _, set := range s.sets {
         		for _, disk := range set.getDisks() {
@@ -858,6 +860,7 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 	var result ListObjectsInfo
 	// validate all the inputs for listObjects
 	if err := checkListObjsArgs(ctx, bucket, prefix, marker, delimiter, s); err != nil {
+                fmt.Println("### In ListObjects returning ::", bucket, prefix, err)
 		return result, err
 	}
 

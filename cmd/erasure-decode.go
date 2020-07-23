@@ -32,6 +32,7 @@ type parallelReader struct {
 	shardSize     int64
 	shardFileSize int64
 	buf           [][]byte
+        pool_used     bool
 }
 
 // newParallelReader returns parallelReader.
@@ -43,6 +44,7 @@ func newParallelReader(readers []io.ReaderAt, e Erasure, offset, totalLength int
 		e.ShardSize(),
 		e.ShardFileSize(totalLength),
 		make([][]byte, len(readers)),
+                true,
 	}
 }
 
@@ -102,8 +104,10 @@ func (p *parallelReader) Read() ([][]byte, error) {
 			if p.buf[i] == nil {
 				// Reading first time on this disk, hence the buffer needs to be allocated.
 				// Subsequent reads will re-use this buffer.
-                                if (globalDontUseECMemPool) {
+                                if (globalDontUseECMemPool || p.shardSize < customECpoolObjSize) {
 				  p.buf[i] = make([]byte, p.shardSize)
+                                  //fmt.Println("### EC pool not used:", p.shardSize, customECpoolObjSize)
+                                  p.pool_used = false
                                 } else {
 				  p.buf[i] = poolAlloc(p.shardSize) 
                                 }
@@ -111,9 +115,12 @@ func (p *parallelReader) Read() ([][]byte, error) {
 			}
 			// For the last shard, the shardsize might be less than previous shard sizes.
 			// Hence the following statement ensures that the buffer size is reset to the right size.
+
 			p.buf[i] = p.buf[i][:p.shardSize]
+                        //read_buf := p.buf[i][:p.shardSize]
                         //fmt.Println("### Initiating bitrot read, index, shardsize, buf_len ::", i, p.shardSize, len(p.buf[i]), p.offset)
 			_, err := disk.ReadAt(p.buf[i], p.offset)
+			//_, err := disk.ReadAt(read_buf, p.offset)
 			if err != nil {
                                 fmt.Println("!!! Read failed, err = ", err)
 				p.readers[i] = nil
@@ -123,6 +130,7 @@ func (p *parallelReader) Read() ([][]byte, error) {
 			}
 			newBufLK.Lock()
 			newBuf[i] = p.buf[i]
+			//newBuf[i] = read_buf
 			newBufLK.Unlock()
 			// Since ReadAt returned success, there is no need to trigger another read.
 			readTriggerCh <- false
@@ -208,8 +216,9 @@ func (e Erasure) Decode(ctx context.Context, writer io.Writer, readers []io.Read
 		bytesWritten += n
 
 	}
-        if (!globalDontUseECMemPool) {
+        if (!globalDontUseECMemPool && reader.pool_used) {
           releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+          //releasePoolBuf(reader.buf, e.dataBlocks, reader.shardSize)
         }
 
 	if bytesWritten != length {
