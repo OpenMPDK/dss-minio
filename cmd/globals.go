@@ -165,7 +165,8 @@ var (
 	globalEndpointsLocal EndpointList
         globalNkvShared bool 
         globalMinio_on_kv bool 
-        globalDummy_read bool 
+        globalDummy_read int64
+        globalVerifyChecksum bool 
         globalSC_read bool 
         globalNolock_read bool 
         globalDontUseECMemPool bool 

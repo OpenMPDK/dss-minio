@@ -608,7 +608,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
             }
             id := r.entry.IDs[r.index]
             //var data_b []byte
-            if (globalDummy_read && r.length > 4096) {
+            if (globalDummy_read > 0 && r.length > 4096) {
               //data_b = *r.pool_buf
               r.valid_data = *r.pool_buf
               break;
@@ -667,7 +667,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
           }
         }
         var num_bytes int = 0
-	if (!globalDummy_read || r.length <= 4096) {
+	if (globalDummy_read == 0 || r.length <= 4096) {
 	  //n = copy(p[bytes_copied:], r.valid_data[r.readIndex:])
 	  num_bytes = copy(p[n:], r.valid_data[r.readIndex:])
         } else {
@@ -691,6 +691,11 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 	if err != nil {
 		return nil, err
 	}
+        if (length == -1) {
+          length = entry.Size
+          //fmt.Println("### Adjusted length:: ",length, entry.Size, nskey)
+        }
+
         if (use_custome_reader) {
           r_io := NewReader_kv(nskey, k, entry, offset, length)
           if (r_io == nil) {
@@ -889,14 +894,15 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
 		copy(newBuf, buf)
 		return newBuf, err
 	}
-	fi, err := k.StatFile(volume, filePath)
-	if err != nil {
-		return nil, err
-	}
+	//fi, err := k.StatFile(volume, filePath)
+	//if err != nil {
+	//	return nil, err
+	//}
         //fmt.Println("### Calling from ReadAll, volume, filePath, path", volume, filePath, k.path)
-	r, err := k.ReadFileStream(volume, filePath, 0, fi.Size)
+	//r, err := k.ReadFileStream(volume, filePath, 0, fi.Size)
+	r, err := k.ReadFileStream(volume, filePath, 0, -1)
 	if (r == nil || err != nil) {
-                fmt.Println("??? Got error while ReadFileStream ???", err)
+                fmt.Println("??? Got error while ReadFileStream ???", volume, filePath, err)
                 if (r != nil) {
                   r.Close()
                 }

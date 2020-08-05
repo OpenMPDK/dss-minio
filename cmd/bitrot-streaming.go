@@ -113,9 +113,10 @@ func (b *streamingBitrotReader) Close() error {
 }
 
 func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
-        //if (globalDummy_read) {
-          //return len(buf), nil
-        //}
+        if (globalDummy_read == 2) {
+          //fmt.Println("### Returning Dummy read ::",b.volume, b.filePath, len(buf)) 
+          return len(buf), nil
+        }
         //fmt.Println("### ReadAt, buf_len, offset, volume, filePath, path", len(buf), offset, b.volume, b.filePath, b.disk.String())        
 	var err error
 	if offset%b.shardSize != 0 {
@@ -138,7 +139,7 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		logger.LogIf(context.Background(), errUnexpected)
 		return 0, errUnexpected
 	}
-	b.h.Reset()
+	//b.h.Reset()
 	_, err = io.ReadFull(b.rc, b.hashBytes)
 	if err != nil {
 		logger.LogIf(context.Background(), err)
@@ -151,10 +152,12 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
                 fmt.Println("!!! Read failed during data read, err = ", err)
 		return 0, err
 	}
-        if (!globalDummy_read) {
+        if (globalDummy_read == 0 && globalVerifyChecksum) {
+          //fmt.Println("### Doing checksum verify..", b.volume, b.filePath, b.disk.String())
+          b.h.Reset()
 	  b.h.Write(buf)
 
-	  if (!globalDummy_read && !bytes.Equal(b.h.Sum(nil), b.hashBytes)) {
+	  if (!bytes.Equal(b.h.Sum(nil), b.hashBytes)) {
 		err = hashMismatchError{hex.EncodeToString(b.hashBytes), hex.EncodeToString(b.h.Sum(nil))}
 		logger.LogIf(context.Background(), err)
 		return 0, err

@@ -191,11 +191,12 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 		return NewGetObjectReaderFromReader(bytes.NewBuffer(nil), objInfo, opts.CheckCopyPrecondFn, nsUnlocker)
 	}
 
-	var objInfo ObjectInfo
-	objInfo, err = xl.getObjectInfo(ctx, bucket, object)
-	if err != nil {
+	//var objInfo ObjectInfo
+	//objInfo, err = xl.getObjectInfo(ctx, bucket, object)
+	objInfo, metaArr, xlMeta, errs, err_obj := xl.getObjectInfoVerbose(ctx, bucket, object)
+	if err_obj != nil {
 		nsUnlocker()
-		return nil, toObjectErr(err, bucket, object)
+		return nil, toObjectErr(err_obj, bucket, object)
 	}
 
 	fn, off, length, nErr := NewGetObjectReader(rs, objInfo, opts.CheckCopyPrecondFn, nsUnlocker)
@@ -206,7 +207,8 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 	pr, pw := io.Pipe()
 	//pr, _ := io.Pipe()
 	go func() {
-		err := xl.getObject(ctx, bucket, object, off, length, pw, "", opts)
+		//err := xl.getObject(ctx, bucket, object, off, length, pw, "", opts)
+		err := xl.getObjectNoMeta(ctx, bucket, object, off, length, pw, "", opts, metaArr, xlMeta, errs)
                 //block := make([]byte, length)
                 //_, err := io.Copy(pw, bytes.NewReader(block))
                 
@@ -233,6 +235,124 @@ func (xl xlObjects) GetObject(ctx context.Context, bucket, object string, startO
 	}
 	defer objectLock.RUnlock()
 	return xl.getObject(ctx, bucket, object, startOffset, length, writer, etag, opts)
+}
+
+func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, etag string, opts ObjectOptions, metaArr []xlMetaV1, xlMeta xlMetaV1, errs []error) error {
+        //debug.PrintStack()
+
+        if err := checkGetObjArgs(ctx, bucket, object); err != nil {
+                return err
+        }
+
+        // Start offset cannot be negative.
+        if startOffset < 0 {
+                logger.LogIf(ctx, errUnexpected)
+                return errUnexpected
+        }
+
+        // Writer cannot be nil.
+        if writer == nil {
+                logger.LogIf(ctx, errUnexpected)
+                return errUnexpected
+        }
+
+        // If its a directory request, we return an empty body.
+        if hasSuffix(object, slashSeparator) {
+                _, err := writer.Write([]byte(""))
+                logger.LogIf(ctx, err)
+                return toObjectErr(err, bucket, object)
+        }
+
+        // List all online disks.
+        onlineDisks, _ := listOnlineDisks(xl.getDisks(), metaArr, errs)
+
+        // Reorder online disks based on erasure distribution order.
+        onlineDisks = shuffleDisks(onlineDisks, xlMeta.Erasure.Distribution)
+        // Reorder parts metadata based on erasure distribution order.
+        metaArr = shufflePartsMetadata(metaArr, xlMeta.Erasure.Distribution)
+
+        // For negative length read everything.
+        if length < 0 {
+                length = xlMeta.Stat.Size - startOffset
+        }
+
+        // Reply back invalid range if the input offset and length fall out of range.
+        if startOffset > xlMeta.Stat.Size || startOffset+length > xlMeta.Stat.Size {
+                logger.LogIf(ctx, InvalidRange{startOffset, length, xlMeta.Stat.Size})
+                return InvalidRange{startOffset, length, xlMeta.Stat.Size}
+        }
+
+        // Get start part index and offset.
+        partIndex, partOffset, err := xlMeta.ObjectToPartOffset(ctx, startOffset)
+        if err != nil {
+                return InvalidRange{startOffset, length, xlMeta.Stat.Size}
+        }
+
+        // Calculate endOffset according to length
+        endOffset := startOffset
+        if length > 0 {
+                endOffset += length - 1
+        }
+
+        // Get last part index to read given length.
+        lastPartIndex, _, err := xlMeta.ObjectToPartOffset(ctx, endOffset)
+        if err != nil {
+                return InvalidRange{startOffset, length, xlMeta.Stat.Size}
+        }
+
+        var totalBytesRead int64
+        //fmt.Println("### Creating EC, data_blocks, parity_blocks, block_size = ", xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
+        erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
+        if err != nil {
+                return toObjectErr(err, bucket, object)
+        }
+        for ; partIndex <= lastPartIndex; partIndex++ {
+                if length == totalBytesRead {
+                        break
+                }
+                // Save the current part name and size.
+                partName := xlMeta.Parts[partIndex].Name
+                partSize := xlMeta.Parts[partIndex].Size
+
+                partLength := partSize - partOffset
+                // partLength should be adjusted so that we don't write more data than what was requested.
+                if partLength > (length - totalBytesRead) {
+                        partLength = length - totalBytesRead
+                }
+                tillOffset := erasure.ShardFileTillOffset(partOffset, partLength, partSize)
+                //fmt.Println("### partIndex, partName, partSize, partLength, partOffset, tillOffset, ec.shard = ", partIndex, partName, partSize, partLength, partOffset, tillOffset, erasure.ShardSize())
+                // Get the checksums of the current part.
+                readers := make([]io.ReaderAt, len(onlineDisks))
+                for index, disk := range onlineDisks {
+                        if disk == OfflineDisk {
+                                continue
+                        }
+                        checksumInfo := metaArr[index].Erasure.GetChecksumInfo(partName)
+                        readers[index] = newBitrotReader(disk, bucket, pathJoin(object, partName), tillOffset, checksumInfo.Algorithm, checksumInfo.Hash, erasure.ShardSize())
+                }
+                err := erasure.Decode(ctx, writer, readers, partOffset, partLength, partSize)
+                // Note: we should not be defer'ing the following closeBitrotReaders() call as we are inside a for loop i.e if we use defer, we would accumulate a lot of open files by the time
+                // we return from this function.
+                closeBitrotReaders(readers)
+                if err != nil {
+                        fmt.Println("### Decode error = ", err)
+                        return toObjectErr(err, bucket, object)
+                }
+                for i, r := range readers {
+                        if r == nil {
+                                onlineDisks[i] = OfflineDisk
+                        }
+                }
+                // Track total bytes read from disk and written to the client.
+                totalBytesRead += partLength
+
+                // partOffset will be valid only for the first part, hence reset it to 0 for
+                // the remaining parts.
+                partOffset = 0
+        } // End of read all parts loop.
+
+        // Return success.
+        return nil
 }
 
 // getObject wrapper for xl GetObject
@@ -445,6 +565,33 @@ func (xl xlObjects) GetObjectInfo(ctx context.Context, bucket, object string, op
 
 	return info, nil
 }
+
+func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object string) (objInfo ObjectInfo, metaArr []xlMetaV1, xmv xlMetaV1, erros []error, err error) {
+        disks := xl.getDisks()
+
+        // Read metadata associated with the object from all disks.
+        metaArr, errs := readAllXLMetadata(ctx, disks, bucket, object)
+
+        readQuorum, _, err := objectQuorumFromMeta(ctx, xl, metaArr, errs)
+        if err != nil {
+                return objInfo, nil, xlMetaV1{}, errs, err
+        }
+
+        // List all the file commit ids from parts metadata.
+        modTimes := listObjectModtimes(metaArr, errs)
+
+        // Reduce list of UUIDs to a single common value.
+        modTime, _ := commonTime(modTimes)
+
+        // Pick latest valid metadata.
+        xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
+        if err != nil {
+                return objInfo, nil, xlMeta, errs, err
+        }
+
+        return xlMeta.ToObjectInfo(bucket, object), metaArr, xlMeta, errs, nil
+}
+
 
 // getObjectInfo - wrapper for reading object metadata and constructs ObjectInfo.
 func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object string) (objInfo ObjectInfo, err error) {

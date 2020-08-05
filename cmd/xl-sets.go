@@ -412,6 +412,13 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           fmt.Println("### Setting up for no Lock during read.. ###")
           globalNolock_read = true
         }
+
+        globalVerifyChecksum = true
+        if os.Getenv("MINIO_ENABLE_NO_READ_VERIFY") != "" {
+          fmt.Println("### Setting up for no checksum verify during read.. ###")
+          globalVerifyChecksum = false
+        }
+        globalDummy_read = -1
        
 	return s, nil
 }
