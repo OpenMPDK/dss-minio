@@ -40,6 +40,14 @@ func (xl xlObjects) MakeBucketWithLocation(ctx context.Context, bucket, location
 		return BucketNameInvalid{Bucket: bucket}
 	}
 
+        // Lock a dummy object, this is for minio running in shared mode
+        objectLock := xl.nsMutex.NewNSLock("KV", "Volumes" )
+        if err := objectLock.GetLock(globalObjectTimeout); err != nil {
+                return err
+        }
+        defer objectLock.Unlock()
+
+
 	// Initialize sync waitgroup.
 	var wg = &sync.WaitGroup{}
 
@@ -242,6 +250,14 @@ func (xl xlObjects) DeleteBucket(ctx context.Context, bucket string) error {
 		return err
 	}
 	defer bucketLock.Unlock()
+
+        // Lock a dummy object, this is for minio running in shared mode
+        objectLock := xl.nsMutex.NewNSLock("KV", "Volumes" )
+        if err := objectLock.GetLock(globalObjectTimeout); err != nil {
+                return err
+        }
+        defer objectLock.Unlock()
+
 
 	// Collect if all disks report volume not found.
 	var wg = &sync.WaitGroup{}
