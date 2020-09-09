@@ -452,7 +452,92 @@ type Reader struct {
         kvMaxValueSize int64 
         index int64
         is_freed bool
+        async_chan chan int64
+        will_stop int32
+}
+
+func (r *Reader) async_kv (key string) {
+
+  //ticker := time.NewTicker(1 * time.Millisecond)
+  pool_buf := kvValuePool.Get().(*[]byte)
+
+  for {
+    if (atomic.LoadInt32(&r.will_stop) == 1) {
+      kvValuePool.Put(pool_buf)
+      close(r.async_chan)
+      return
+    }
+    if (r == nil) {
+      return
+    }
+    id := r.entry.IDs[r.index]
+    if (globalDummy_read == 8) {
+      time.Sleep(10 * time.Nanosecond)
+    } else if (globalDummy_read == 9) {
+      time.Sleep(100 * time.Nanosecond)
+    } else if (globalDummy_read == 10) {
+      time.Sleep(1 * time.Millisecond)
+    } else if (globalDummy_read == 11) { 
+      time.Sleep(15 * time.Millisecond)
+    } else {
+      time.Sleep(5 * time.Millisecond)
+    }
+    _, err := r.k.kv.Get(r.k.DataKey(id), *pool_buf)
+    if err != nil {
+      fmt.Println("###Error during kv get", r.k.DataKey(id), err)
+      kvValuePool.Put(pool_buf)
+      return
+    } else {
+      //fmt.Println("### Async get call success for key = ", id, len(data_b))
+    }
+
+    /*select {
+      case val:= <-r.async_chan:
+        if (val > 0) {
+          id := r.entry.IDs[val]
+          //fmt.Println("### Async get call for key = ", id)
+          //time.Sleep(5 * time.Millisecond)
+          _, err := r.k.kv.Get(r.k.DataKey(id), *pool_buf)
+          if err != nil {
+            fmt.Println("###Error during kv get", r.k.DataKey(id), err)
+            kvValuePool.Put(pool_buf)  
+            return
+          }
+          
+        } else {
+          //fmt.Println("### Closing async channel ###")
+          kvValuePool.Put(pool_buf)
+          return
+        }
+
+      case  <-ticker.C:
+        //fmt.Println("Tick at", t)
+     
+      default:
+          if (atomic.LoadInt32(&r.will_stop) == 1) {
+            kvValuePool.Put(pool_buf)
+            fmt.Println("### Returning from async_kv ###, key = ", key)
+            close(r.async_chan)
+            return
+          }
+          if (r == nil) {
+	    return
+          }
+          id := r.entry.IDs[r.index]
+          //fmt.Println("### Async get call for key = ", id)
+          //time.Sleep(5 * time.Millisecond)
+          _, err := r.k.kv.Get(r.k.DataKey(id), *pool_buf)
+          if err != nil {
+            fmt.Println("###Error during kv get", r.k.DataKey(id), err)
+            kvValuePool.Put(pool_buf)
+            return
+          } else {
+            //fmt.Println("### Async get call success for key = ", id, len(data_b))
+          }
+
+    }*/
         
+  }  
 }
 
 func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int64) *Reader {
@@ -491,7 +576,14 @@ func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int6
         }
 
         index++
-	return &Reader{key, data_b[blockOffset : blockOffset+blockLength], pool_buf, entry, k, 0, 0, offset, length, startIndex, endIndex, kvMaxValueSize, index, false}
+        a_chan := make(chan int64)
+        custom_reader := Reader{key, data_b[blockOffset : blockOffset+blockLength], pool_buf, entry, k, 0, 0, offset, length, startIndex, endIndex, kvMaxValueSize, index, false, a_chan, 0}
+        if (globalDummy_read > 5 && length > 4096) {
+          //go custom_reader.async_kv (k, entry, index, a_chan )
+          go custom_reader.async_kv (id)
+        }
+	//return &Reader{key, data_b[blockOffset : blockOffset+blockLength], pool_buf, entry, k, 0, 0, offset, length, startIndex, endIndex, kvMaxValueSize, index, false, a_chan}
+        return &custom_reader
 }
 
 func (r *Reader) Close() error {
@@ -507,13 +599,22 @@ func (r *Reader) Close() error {
     }   
     r.is_freed = true
   }
+  if (globalDummy_read > 5 && r.length > 4096) {
+    /*select {
+      case r.async_chan <- 0:
+      default:
+        fmt.Println("no message sent during close")
+    }*/
+    //r.async_chan <- 0
+    atomic.AddInt32(&r.will_stop, 1)
 
+  }
   return nil
 }
 
 
 func (r *Reader) Read(p []byte) (n int, err error) {
-        //fmt.Println("### NewReader_kv.Read, key, input_buffer_size, total_length, mount_point", r.key_name, len(p), r.length, r.offset, r.k.path )
+        //fmt.Println("### NewReader_kv.Read, key, input_buffer_size, total_length, mount_point", r.key_name, len(p), r.length, r.offset, r.k.path, globalDummy_read )
         if (r == nil) {
           fmt.Println("### Error, null reader to read")
           return 0, errFaultyDisk
@@ -611,6 +712,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
             if (globalDummy_read > 0 && r.length > 4096) {
               //data_b = *r.pool_buf
               r.valid_data = *r.pool_buf
+              //fmt.Println("## Dummy read::", len(p), len(r.valid_data), globalDummy_read)
               break;
             } else {
               if ((len(p) - n) >= int (r.kvMaxValueSize)) {
@@ -672,6 +774,35 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	  num_bytes = copy(p[n:], r.valid_data[r.readIndex:])
         } else {
           num_bytes = len(p) - bytes_copied
+          if (globalDummy_read == 4 ) {
+            //fmt.Println("## Dummy copy for SC4 ::", len(p), len(r.valid_data))
+            copy(p, r.valid_data)
+          }
+          if (globalDummy_read >= 5 && read_next_chunk) {
+            //fmt.Println("## Dummy copy for SC5 ::", len(p), len(r.valid_data))
+            if (globalDummy_read == 5) {
+              id := r.entry.IDs[r.index]
+              _, err := r.k.kv.Get(r.k.DataKey(id), *r.pool_buf)
+              if err != nil {
+                fmt.Println("###Error during kv get", r.key_name, r.k.DataKey(id), err)
+                return n, err
+              }
+              r.readIndex = 0 
+            } else {
+              //go r.k.kv.Get(r.k.DataKey(id), *r.pool_buf)
+    	      /*select {
+                case r.async_chan <- r.index:
+                default:
+                  //fmt.Println("no message sent during IO")
+              }*/
+
+              //r.async_chan <- r.index  
+              r.readIndex = 0
+              if (globalDummy_read == 7 ) {
+                copy(p, r.valid_data)
+              }
+            }
+          }
         }
         //r.readIndex = 0
 	r.readIndex += int64(num_bytes)

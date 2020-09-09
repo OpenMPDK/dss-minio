@@ -665,6 +665,7 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 			cstatus := C.minio_nkv_get(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), unsafe.Pointer(&value[0]), C.int(len(value)), &actualLengthCint)
 			status = int(cstatus)
 			actualLength = int(actualLengthCint)
+                        //fmt.Println("##### GET returned, key, length = ", keyStr, actualLength, k.path)
 		} else {
 			ch := make(chan asyncKVLoopResponse, 1)
 			var response asyncKVLoopResponse
@@ -702,7 +703,7 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 		if actualLength > 0 {
 			break
 		}
-		fmt.Println("##### GET returned actual_length=", actualLength)
+		//fmt.Println("##### GET returned actual_length=", actualLength, key)
 		tries--
 		if tries == 0 {
 			fmt.Println("##### GET failed (after 10 retries) on (actual_length=0)", k.path, keyStr)

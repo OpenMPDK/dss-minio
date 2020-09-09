@@ -241,6 +241,8 @@ func (api objectAPIHandlers) SelectObjectContentHandler(w http.ResponseWriter, r
 	})
 }
 
+var dummyBuff = make([]byte, 33554432)
+
 // GetObjectHandler - GET Object
 // ----------
 // This implementation of the GET operation retrieves object. To use GET,
@@ -444,8 +446,8 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
           }
           if (globalDummy_read == 1) {
             //block := make([]byte, length)
-            block := make([]byte, 65536)
-            if _, err = io.Copy(httpWriter, bytes.NewReader(block)); err != nil {
+            //block := make([]byte, 1048576)
+            if _, err = io.Copy(httpWriter, bytes.NewReader(dummyBuff[:length])); err != nil {
                 if !httpWriter.HasWritten() && !statusCodeWritten { // write error response only if no data or headers has been written to client yet
                         writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
                 }
