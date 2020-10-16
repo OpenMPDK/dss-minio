@@ -48,6 +48,7 @@ import (
 	"github.com/minio/minio/pkg/s3select"
 	sha256 "github.com/minio/sha256-simd"
 	"github.com/minio/sio"
+        "sync/atomic"
 )
 
 // supportedHeadGetReqParams - supported request parameters for GET and HEAD presigned request.
@@ -385,9 +386,15 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
           }
         } else {
           //fmt.Println("Going through the SLOW path..!!")
+          if (track_minio_stats) {
+            atomic.AddUint64(&globalTotalGetQD, 1)
+          }
 	  gr, err_bl = getObjectNInfo(ctx, bucket, object, rs, r.Header, lock, opts)
 	  if err_bl != nil {
 	  	writeErrorResponse(ctx, w, toAPIError(ctx, err_bl), r.URL, guessIsBrowserReq(r))
+                if (track_minio_stats) {
+                  atomic.AddUint64(&globalTotalGetQD, ^uint64(0))
+                }
 		return
 	  }
 	  defer gr.Close()
@@ -399,12 +406,18 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 		objInfo.UserDefined = CleanMinioInternalMetadataKeys(objInfo.UserDefined)
 		if _, err = DecryptObjectInfo(&objInfo, r.Header); err != nil {
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
+                        if (track_minio_stats) {
+                          atomic.AddUint64(&globalTotalGetQD, ^uint64(0))
+                        }
 			return
 		}
 	}
 
 	// Validate pre-conditions if any.
 	if checkPreconditions(ctx, w, r, objInfo) {
+                if (track_minio_stats) {
+                  atomic.AddUint64(&globalTotalGetQD, ^uint64(0))
+                }
 		return
 	}
 
@@ -423,6 +436,9 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 
 	if err = setObjectHeaders(w, objInfo, rs); err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
+                if (track_minio_stats) {
+                  atomic.AddUint64(&globalTotalGetQD, ^uint64(0))
+                }
 		return
 	}
 
@@ -472,13 +488,23 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
       		
         } else {
       
+          //if _, err = io.Copy(httpWriter, bytes.NewReader(block)); err != nil {
+
 	  if _, err = io.Copy(httpWriter, gr); err != nil {
-	  //if _, err = io.Copy(httpWriter, bytes.NewReader(block)); err != nil {
-		if !httpWriter.HasWritten() && !statusCodeWritten { // write error response only if no data or headers has been written to client yet
+          
+            if (track_minio_stats) {
+              atomic.AddUint64(&globalTotalGetQD, ^uint64(0))
+            }
+	    if !httpWriter.HasWritten() && !statusCodeWritten { // write error response only if no data or headers has been written to client yet
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
-		}
-		return
+	    }
+	    return
 	  }
+
+          if (track_minio_stats) {
+            atomic.AddUint64(&globalTotalGetQD, ^uint64(0))
+          }
+
         }
 
 	if err = httpWriter.Close(); err != nil {

@@ -59,3 +59,8 @@ func (k *KVEmulator) List(prefix string, buf []byte) ([]string, error) {
 func (k *KVEmulator) DiskInfo() (DiskInfo, error) {
 	return DiskInfo{}, nil
 }
+
+func (k *KVEmulator) UpdateStats() error {
+        return nil
+}
+

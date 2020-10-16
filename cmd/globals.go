@@ -172,6 +172,8 @@ var (
         globalDontUseECMemPool bool 
         globalECBlockSizeKB int64 
         globalInstanceHost string
+        globalTotalGetQD uint64
+        globalTotalECReqQD uint64
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()

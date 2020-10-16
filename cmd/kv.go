@@ -19,6 +19,34 @@ static int minio_nkv_open(char *config, uint64_t *nkv_handle) {
   return result;
 }
 
+static int minio_nkv_register_counter(uint64_t nkv_handle, char* module_name, char* counter_name, void** stat_ctx) {
+
+  nkv_stat_counter minio_cnt;
+  minio_cnt.counter_name = counter_name;
+  minio_cnt.counter_type = STAT_TYPE_UINT64;
+  nkv_result result;
+
+  result = nkv_register_stat_counter (nkv_handle, module_name, &minio_cnt, stat_ctx);
+  return result;
+}
+
+static int minio_nkv_unregister_counter(struct minio_nkv_handle *handle, void* stat_ctx) {
+
+  nkv_result result;
+
+  result = nkv_unregister_stat_counter (handle->nkv_handle, stat_ctx);
+  return result;
+}
+
+static int minio_nkv_set_stat_counter(struct minio_nkv_handle *handle, unsigned long long value, void* stat_ctx) {
+
+  nkv_result result;
+
+  result = nkv_set_stat_counter (handle->nkv_handle, (uint64_t)value, stat_ctx);
+  return result;
+}
+
+
 static int minio_nkv_open_path(struct minio_nkv_handle *handle, char *mount_point) {
   uint32_t index = 0;
   uint32_t cnt_count = NKV_MAX_ENTRIES_PER_CALL;
@@ -279,8 +307,12 @@ func getKVMaxValueSize() int {
 
 var kvChecksum = os.Getenv("MINIO_NKV_CHECKSUM") != ""
 var use_custome_reader = os.Getenv("MINIO_NKV_USE_CUSTOM_READER") != ""
+var track_minio_stats = os.Getenv("MINIO_ENABLE_STATS") != ""
+var init_stats uint32 = 0
 
 var globalNKVHandle C.uint64_t
+var globalMinioStatHandleGetQD unsafe.Pointer 
+var globalMinioStatHandleECQD  unsafe.Pointer
 
 func minio_nkv_open(configPath string) error {
 	if globalNKVHandle != 0 {
@@ -293,6 +325,44 @@ func minio_nkv_open(configPath string) error {
 	if status != 0 {
 		return errDiskNotFound
 	}
+
+        if (init_stats == 0) {
+          atomic.AddUint32(&init_stats, 1)
+          var stat_error int = 0
+          if (track_minio_stats) {
+            status = C.minio_nkv_register_counter(globalNKVHandle, C.CString("minio_upstream"), C.CString("s3_get_req"), &globalMinioStatHandleGetQD);
+            if status != 0 {
+              fmt.Println("Minio stat registration for s3_get_req failied, error = ", status)
+              stat_error++
+            } else {
+              if (globalMinioStatHandleGetQD == nil) {
+                stat_error++
+                fmt.Println("NKV stat handle for s3_get_req is NULL !!")
+              } else {
+                fmt.Println("########### Minio stat registration for s3_get_req is successful ############")
+              }
+            }          
+            status = C.minio_nkv_register_counter(globalNKVHandle, C.CString("minio_upstream_ec"), C.CString("ec_get_req"), &globalMinioStatHandleECQD);
+            if status != 0 {
+              stat_error++
+              fmt.Println("Minio stat registration for ec_get_req failied, error = ", status)
+            } else {
+
+              if (globalMinioStatHandleECQD == nil) {
+                stat_error++
+                fmt.Println("NKV stat handle for ec_get_req is NULL !!")
+              } else {
+                fmt.Println("########### Minio stat registration for ec_get_req is successful ############")
+              }
+            }
+            if (stat_error == 0) {
+              fmt.Println("####### Minio stat counter registration with NKV is successful !! #######")
+            }
+          } else {
+            fmt.Println("####### Minio stat counter registration with NKV is not enabled #######")
+          }
+        }
+        
 	return nil
 }
 
@@ -844,3 +914,22 @@ func (k *KV) DiskInfo() (DiskInfo, error) {
 		RootDisk: false,
 	}, nil
 }
+
+
+func (k *KV) UpdateStats()  error {
+        get_qd := C.ulonglong(globalTotalGetQD)
+        ec_qd  := C.ulonglong(globalTotalECReqQD)
+
+        status := C.minio_nkv_set_stat_counter(&k.handle, get_qd, globalMinioStatHandleGetQD)
+        if (status != 0) {
+          fmt.Println("minio_nkv_set_stat_counter failed for counter s3_get_req !!, value = ", get_qd)
+        }
+
+        status = C.minio_nkv_set_stat_counter(&k.handle, ec_qd, globalMinioStatHandleECQD)
+        if (status != 0) {
+          fmt.Println("minio_nkv_set_stat_counter failed for counter ec_get_req !!, value = ", ec_qd)
+        }
+
+        return nil
+}
+

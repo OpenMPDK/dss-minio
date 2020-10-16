@@ -22,6 +22,7 @@ import (
 	"sync"
         "fmt"
 	"github.com/minio/minio/cmd/logger"
+        "sync/atomic"
 )
 
 // Reads in parallel from readers.
@@ -119,7 +120,16 @@ func (p *parallelReader) Read() ([][]byte, error) {
 			p.buf[i] = p.buf[i][:p.shardSize]
                         //read_buf := p.buf[i][:p.shardSize]
                         //fmt.Println("### Initiating bitrot read, index, shardsize, buf_len ::", i, p.shardSize, len(p.buf[i]), p.offset)
+          		if (track_minio_stats) {
+            		  atomic.AddUint64(&globalTotalECReqQD, 1)
+          		}
+
 			_, err := disk.ReadAt(p.buf[i], p.offset)
+
+                	if (track_minio_stats) {
+                          atomic.AddUint64(&globalTotalECReqQD, ^uint64(0))
+                        }
+
 			//_, err := disk.ReadAt(read_buf, p.offset)
 			if err != nil {
                                 fmt.Println("!!! Read failed, err = ", err)

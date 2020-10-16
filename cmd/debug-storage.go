@@ -181,3 +181,9 @@ func (d *debugStorage) ReadAll(volume string, filePath string) (buf []byte, err 
 	}
 	return buf, err
 }
+
+func (d *debugStorage) UpdateStats () error {
+  err := d.s.UpdateStats()
+  return err
+}
+

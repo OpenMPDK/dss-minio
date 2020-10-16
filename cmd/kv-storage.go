@@ -1048,3 +1048,9 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
         r.Close()
 	return r_b, nil
 }
+
+func (k *KVStorage) UpdateStats() error {
+
+  k.kv.UpdateStats()
+  return nil
+}

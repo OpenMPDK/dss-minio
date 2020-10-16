@@ -51,6 +51,7 @@ type StorageAPI interface {
 	CreateDir(volume, dir string) error
 	StatDir(volume, dir string) error
 	DeleteDir(volume, dir string) error
+        UpdateStats() error
 
 	// Write all data, syncs the data to disk.
 	WriteAll(volume string, path string, buf []byte) (err error)

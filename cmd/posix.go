@@ -1404,3 +1404,9 @@ func (s *posix) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) (err e
 
 	return nil
 }
+
+func (s *posix) UpdateStats() error {
+
+  return nil
+}
+

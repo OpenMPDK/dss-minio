@@ -13,6 +13,7 @@ type KVInterface interface {
 	Delete(keyStr string) error
 	List(prefix string, buf []byte) ([]string, error)
 	DiskInfo() (DiskInfo, error)
+        UpdateStats() error
 }
 
 const kvNSEntryPaddingMultiple = 4

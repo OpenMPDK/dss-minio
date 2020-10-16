@@ -308,6 +308,28 @@ func (s *xlSets) GetDisks(setIndex int) func() []StorageAPI {
 	}
 }
 
+
+func (s *xlSets) UpdateCountersToDisk() {
+    for {
+      fmt.Println("About to update counters")
+      for _, set := range s.sets {
+        for _, disk := range set.getDisks() {
+          if disk == nil {
+            continue
+          }
+          if err := disk.UpdateStats(); err != nil {
+            fmt.Println("Updating counter stat failed, disk = ", disk)
+          } else {
+            break
+          }
+        }
+      }
+
+      time.Sleep(900 * time.Millisecond)
+    }
+}
+
+
 func (s *xlSets) syncSharedVols() {
 	var init_multi int = 0
         syncTimeStr := os.Getenv("MINIO_NKV_SHARED_SYNC_INTERVAL")
@@ -400,7 +422,11 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
 
         //Sync vols created by other minio instances in case of shared storage mode
         go s.syncSharedVols()
- 
+        
+        if (track_minio_stats) {
+          go s.UpdateCountersToDisk()
+        }
+
         globalSC_read = false
         if os.Getenv("MINIO_ENABLE_SC_READ") != "" {
           fmt.Println("### Setting up for SC read.. ###")
