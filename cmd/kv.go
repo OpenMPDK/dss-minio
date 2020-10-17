@@ -357,6 +357,9 @@ func minio_nkv_open(configPath string) error {
             }
             if (stat_error == 0) {
               fmt.Println("####### Minio stat counter registration with NKV is successful !! #######")
+            } else {
+              fmt.Println("####### Problem with stat registration with NKV, disabling stat collection #######")
+              track_minio_stats = false
             }
           } else {
             fmt.Println("####### Minio stat counter registration with NKV is not enabled #######")

@@ -128,10 +128,10 @@ func (k *KVStorage) DiskInfo() (info DiskInfo, err error) {
 
 func (k *KVStorage) loadVolumes() (*kvVolumes, error) {
 	volumes := &kvVolumes{}
-	//bufp := kvValuePool.Get().(*[]byte)
-	//defer kvValuePool.Put(bufp)
-        bufp := kvValuePoolMeta.Get().(*[]byte)
-        defer kvValuePoolMeta.Put(bufp)
+	bufp := kvValuePool.Get().(*[]byte)
+	defer kvValuePool.Put(bufp)
+        //bufp := kvValuePoolMeta.Get().(*[]byte)
+        //defer kvValuePoolMeta.Put(bufp)
 
 	value, err := k.kv.Get(kvVolumesKey, *bufp)
 	if err != nil {
