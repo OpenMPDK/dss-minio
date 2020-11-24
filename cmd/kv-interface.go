@@ -14,6 +14,7 @@ type KVInterface interface {
 	List(prefix string, buf []byte) ([]string, error)
 	DiskInfo() (DiskInfo, error)
         UpdateStats() error
+        nkv_close() error
 }
 
 const kvNSEntryPaddingMultiple = 4

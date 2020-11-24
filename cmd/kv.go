@@ -12,12 +12,30 @@ struct minio_nkv_handle {
   uint64_t network_path_hash;
 };
 
-static int minio_nkv_open(char *config, uint64_t *nkv_handle) {
-  uint64_t instance_uuid = 0;
+//uint64_t instance_uuid = 0;
+static int minio_nkv_open(char *config, uint64_t *nkv_handle, uint64_t *globalNKVInstanceUuid) {
+  //uint64_t instance_uuid = 0;
   nkv_result result;
-  result = nkv_open(config, "minio", "msl-ssg-sk01", 1023, &instance_uuid, nkv_handle);
+  result = nkv_open(config, "minio", "msl-ssg-sk01", 1023, globalNKVInstanceUuid, nkv_handle);
   return result;
 }
+
+static int minio_nkv_close(struct minio_nkv_handle *handle, uint64_t globalNKVInstanceUuid) {
+  nkv_result result;
+  if (globalNKVInstanceUuid != 0) {
+    result = nkv_close(handle->nkv_handle, globalNKVInstanceUuid);
+    if (result == 0) {
+      printf("NKV successfully closed, nkv_handle = %u, instance_uuid = %u",
+              handle->nkv_handle, globalNKVInstanceUuid);   
+    }
+  } else {
+    printf("nkv instance is already closed, nkv_handle = %u, instance_uuid = %u",
+            handle->nkv_handle, globalNKVInstanceUuid);
+  }
+  globalNKVInstanceUuid = 0;
+  return result;
+}
+
 
 static int minio_nkv_register_counter(uint64_t nkv_handle, char* module_name, char* counter_name, void** stat_ctx) {
 
@@ -311,6 +329,7 @@ var track_minio_stats = os.Getenv("MINIO_ENABLE_STATS") != ""
 var init_stats uint32 = 0
 
 var globalNKVHandle C.uint64_t
+var globalNKVInstanceUuid C.uint64_t
 var globalMinioStatHandleGetQD unsafe.Pointer 
 var globalMinioStatHandleECQD  unsafe.Pointer
 
@@ -320,7 +339,7 @@ func minio_nkv_open(configPath string) error {
 	}
 	go kvAsyncLoop()
 	cs := C.CString(configPath)
-	status := C.minio_nkv_open(cs, &globalNKVHandle)
+	status := C.minio_nkv_open(cs, &globalNKVHandle, &globalNKVInstanceUuid)
 	C.free(unsafe.Pointer(cs))
 	if status != 0 {
 		return errDiskNotFound
@@ -398,10 +417,12 @@ type KV struct {
 	kvHashSumMapMu sync.RWMutex
 }
 
+var num_alloc uint64 = 0
 type kvValuePoolType struct {
        *sync.Pool
        count uint64
        sync.Mutex
+       num_alloc uint64
 }
 
 func (k *kvValuePoolType) Get() interface{} {
@@ -424,13 +445,14 @@ func (k *kvValuePoolType) PrintCount() {
        //k.Lock()
        //count := k.count
        //k.Unlock()
-       fmt.Println("Pool count", k.count)
+       fmt.Println("Pool count, total alloc ::", k.count, num_alloc)
 }
 
 var kvValuePool = &kvValuePoolType{
        Pool: &sync.Pool{
                New: func() interface{} {
                        b := make([]byte, kvMaxValueSize)
+                       atomic.AddUint64(&num_alloc, 1)
                        return &b
                },
         },
@@ -446,7 +468,7 @@ var kvValuePool = &kvValuePoolType{
 
 var kvValuePoolMeta = sync.Pool{
         New: func() interface{} {
-                b := make([]byte, 4096)
+                b := make([]byte, 8192)
                 return &b
         },
 }
@@ -935,4 +957,11 @@ func (k *KV) UpdateStats()  error {
 
         return nil
 }
+
+func (k *KV) nkv_close()  error {
+
+        C.minio_nkv_close(&k.handle, globalNKVInstanceUuid)
+        return nil
+}
+
 

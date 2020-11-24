@@ -105,21 +105,41 @@ func (p *parallelReader) Read() ([][]byte, error) {
 			if p.buf[i] == nil {
 				// Reading first time on this disk, hence the buffer needs to be allocated.
 				// Subsequent reads will re-use this buffer.
-                                if (globalDontUseECMemPool || p.shardSize < customECpoolObjSize) {
-				  p.buf[i] = make([]byte, p.shardSize)
-                                  //fmt.Println("### EC pool not used:", p.shardSize, customECpoolObjSize)
+                                alloc_len := p.shardSize
+                                if (globalZeroCopyReader && (p.shardSize % 4 != 0)) {
+                                  rem_len := p.shardSize % 4
+                                  alloc_len = p.shardSize + (4 - rem_len)
+                                }
+                                
+                                if (globalDontUseECMemPool) {
+                                  p.buf[i] = make([]byte, alloc_len)
+                                  p.pool_used = false
+                                  
+                                } else {
+                                  p.buf[i] = poolAlloc(p.shardSize)
+                                  p.pool_used = true
+                                }
+                                /*if (globalDontUseECMemPool || p.shardSize < customECpoolObjSize) {
+                                  if (!globalZeroCopyReader || p.shardSize <= 8192 || p.shardSize % 4 == 0) {
+				    p.buf[i] = make([]byte, p.shardSize)
+                                  } else {
+                                    rem_len := p.shardSize % 4
+                                    p.buf[i] = make([]byte, p.shardSize + (4 - rem_len))
+                                  }
+                                  mt.Println("### EC pool not used:", i, p.shardSize, customECpoolObjSize, len(p.buf[i]))
                                   p.pool_used = false
                                 } else {
 				  p.buf[i] = poolAlloc(p.shardSize) 
-                                }
-                                //fmt.Println("### Allocated for EC chunk read, index, shardsize, buf_len, offset = ", i, p.shardSize, len(p.buf[i]), p.offset)
+                                  p.pool_used = true
+                                }*/
+                                //fmt.Println("### Allocated for EC chunk read, index, shardsize, buf_len, offset = ", i, p.shardSize, len(p.buf[i]), p.offset, customECpoolObjSize, p.pool_used)
 			}
 			// For the last shard, the shardsize might be less than previous shard sizes.
 			// Hence the following statement ensures that the buffer size is reset to the right size.
 
-			p.buf[i] = p.buf[i][:p.shardSize]
+			//p.buf[i] = p.buf[i][:p.shardSize]
                         //read_buf := p.buf[i][:p.shardSize]
-                        //fmt.Println("### Initiating bitrot read, index, shardsize, buf_len ::", i, p.shardSize, len(p.buf[i]), p.offset)
+                        //fmt.Println("### Initiating bitrot read, index, shardsize, buf_len ::", i, p.shardSize, len(p.buf[i]), p.offset, p.pool_used)
           		if (track_minio_stats) {
             		  atomic.AddUint64(&globalTotalECReqQD, 1)
           		}
@@ -132,14 +152,14 @@ func (p *parallelReader) Read() ([][]byte, error) {
 
 			//_, err := disk.ReadAt(read_buf, p.offset)
 			if err != nil {
-                                fmt.Println("!!! Read failed, err = ", err)
+                                fmt.Println("!!! Read failed, err = ", err, len(p.buf[i]))
 				p.readers[i] = nil
 				// Since ReadAt returned error, trigger another read.
 				readTriggerCh <- true
 				return
 			}
 			newBufLK.Lock()
-			newBuf[i] = p.buf[i]
+			newBuf[i] = p.buf[i][:p.shardSize]
 			//newBuf[i] = read_buf
 			newBufLK.Unlock()
 			// Since ReadAt returned success, there is no need to trigger another read.
@@ -202,24 +222,24 @@ func (e Erasure) Decode(ctx context.Context, writer io.Writer, readers []io.Read
                 
 		if err != nil {
                         fmt.Println("### Returning on read failure, err =", err)
-                        if (!globalDontUseECMemPool) {
-                          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+                        if (!globalDontUseECMemPool && reader.pool_used) {
+                          releasePoolBuf(reader.buf, e.dataBlocks, reader.shardSize)
                         }
 			return err
 		}
 		if err = e.DecodeDataBlocks(bufs); err != nil {
 			logger.LogIf(ctx, err)
                         fmt.Println("### Returning on decode failure, err =", err)
-                        if (!globalDontUseECMemPool) {
-                          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+                        if (!globalDontUseECMemPool && reader.pool_used) {
+                          releasePoolBuf(reader.buf, e.dataBlocks, reader.shardSize)
                         }
 			return err
 		}
 		n, err := writeDataBlocks(ctx, writer, bufs, e.dataBlocks, blockOffset, blockLength)
 		if err != nil {
                         fmt.Println("### Returning on writedb failure, err =", err)
-                        if (!globalDontUseECMemPool) {
-                          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+                        if (!globalDontUseECMemPool && reader.pool_used) {
+                          releasePoolBuf(reader.buf, e.dataBlocks, reader.shardSize)
                         }
 			return err
 		}
@@ -227,8 +247,8 @@ func (e Erasure) Decode(ctx context.Context, writer io.Writer, readers []io.Read
 
 	}
         if (!globalDontUseECMemPool && reader.pool_used) {
-          releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
-          //releasePoolBuf(reader.buf, e.dataBlocks, reader.shardSize)
+          //releasePoolBuf(bufs, e.dataBlocks, reader.shardSize)
+          releasePoolBuf(reader.buf, e.dataBlocks, reader.shardSize)
         }
 
 	if bytesWritten != length {

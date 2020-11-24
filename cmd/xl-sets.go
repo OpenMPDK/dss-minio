@@ -347,6 +347,7 @@ func (s *xlSets) syncSharedVols() {
   	for {
                 if (!globalDontUseECMemPool) {
                   kvPoolEC.PrintCount()
+                  kvMetaPoolEC.PrintCount()
                 }
                 if (globalNkvShared) {
         	  for _, set := range s.sets {
@@ -444,6 +445,13 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           fmt.Println("### Setting up for no checksum verify during read.. ###")
           globalVerifyChecksum = false
         }
+
+        globalZeroCopyReader = false
+        if os.Getenv("MINIO_ENABLE_ZERO_COPY_READER") != "" {
+          fmt.Println("### Setting up zero copy reader during read.. ###")
+          globalZeroCopyReader = true
+        }
+
         globalDummy_read = -1
        
 	return s, nil

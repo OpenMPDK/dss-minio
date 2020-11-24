@@ -607,6 +607,7 @@ func reloadPolicies(objectAPI ObjectLayer, prefix string, cannedPolicyMap map[st
 			return err
 		}
 		marker = lo.NextMarker
+                fmt.Println("### reloadPolicies::", prefix, minioMetaBucket, lo.Prefixes)
 		for _, prefix := range lo.Prefixes {
 			pFile := pathJoin(prefix, iamPolicyFile)
 			pdata, perr := readConfig(context.Background(), objectAPI, pFile)
@@ -638,6 +639,7 @@ func reloadUsers(objectAPI ObjectLayer, prefix string, usersMap map[string]auth.
 			return err
 		}
 		marker = lo.NextMarker
+                fmt.Println("### reloadPolicies::", prefix, minioMetaBucket, lo.Prefixes)
 		for _, prefix := range lo.Prefixes {
 			idFile := pathJoin(prefix, iamIdentityFile)
 			pFile := pathJoin(prefix, iamPolicyFile)

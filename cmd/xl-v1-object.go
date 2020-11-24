@@ -70,7 +70,6 @@ func (xl xlObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBuc
 
 	// Read metadata associated with the object from all disks.
 	storageDisks := xl.getDisks()
-
 	metaArr, errs := readAllXLMetadata(ctx, storageDisks, srcBucket, srcObject)
 
 	// get Quorum for this object

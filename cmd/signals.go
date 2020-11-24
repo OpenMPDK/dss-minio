@@ -41,7 +41,7 @@ func handleSignals() {
 
 	stopProcess := func() bool {
 		var err, oerr error
-
+              
 		if globalNotificationSys != nil {
 			globalNotificationSys.RemoveAllRemoteTargets()
 		}
@@ -54,7 +54,7 @@ func handleSignals() {
 
 		// send signal to various go-routines that they need to quit.
 		close(GlobalServiceDoneCh)
-
+                globalIsStopping = true
 		if objAPI := newObjectLayerFn(); objAPI != nil {
 			oerr = objAPI.Shutdown(context.Background())
 			logger.LogIf(context.Background(), oerr)

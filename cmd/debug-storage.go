@@ -25,6 +25,7 @@ func (k *debugStorage) LastError() error {
 }
 
 func (d *debugStorage) Close() error {
+        d.s.Close()
 	return nil
 }
 

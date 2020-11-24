@@ -50,7 +50,32 @@ func (k *kvPoolECPoolType) PrintCount() {
        fmt.Println("## EC-Pool count", k.count)
 }
 
+type kvMetaPoolECPoolType struct {
+       *sync.Pool
+       count uint64
+}
+
+func (k *kvMetaPoolECPoolType) Get() interface{} {
+       atomic.AddUint64(&k.count, 1)
+       return k.Pool.Get()
+}
+
+func (k *kvMetaPoolECPoolType) Put(x interface{}) {
+       //fmt.Println("## EC-Pool Put called, ", k.count)
+       pool_cnt := atomic.LoadUint64(&k.count)
+       if (pool_cnt > 0) {
+         atomic.AddUint64(&k.count, ^uint64(0))
+         k.Pool.Put(x)
+       }
+}
+
+func (k *kvMetaPoolECPoolType) PrintCount() {
+       fmt.Println("## EC-Meta-Pool count", k.count)
+}
+
+
 var kvPoolEC *kvPoolECPoolType = nil
+var kvMetaPoolEC *kvMetaPoolECPoolType = nil
 
 func initECPool() {
   fmt.Println("### Creating EC Pool with object size, EC Block size = ",customECpoolObjSize, blockSizeV1)
@@ -63,19 +88,42 @@ func initECPool() {
         },
   }
 
+  fmt.Println("### Creating Meta EC Pool with object size = ", 8192)
+  kvMetaPoolEC = &kvMetaPoolECPoolType{
+       Pool: &sync.Pool{
+               New: func() interface{} {
+                       b := make([]byte, 8192)
+                       return b
+               },
+        },
+  }
+
+
 }
 
 
 func  poolAlloc(size int64) []byte {
-  return kvPoolEC.Get().([]byte)
+  if (size <= 8192) {
+    return kvMetaPoolEC.Get().([]byte)
+  } else {
+    return kvPoolEC.Get().([]byte)
+  }
 }
 
 func releasePoolBuf(bufs [][]byte, dataBlocks int, shardSize int64) {
+        if (bufs == nil) {
+          return          
+        }
+
 	for rev_index, _ := range bufs[:dataBlocks] {
         	rev_index = len(bufs[:dataBlocks]) - 1 - rev_index
                 block := bufs[rev_index]
                 if block != nil {
-                      kvPoolEC.Put(block)
+                      if (shardSize <= 8192) {
+                        kvMetaPoolEC.Put(block)
+                      } else {
+                        kvPoolEC.Put(block)
+                      }
                 }
         }
 

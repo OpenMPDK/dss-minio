@@ -64,3 +64,7 @@ func (k *KVEmulator) UpdateStats() error {
         return nil
 }
 
+func (k *KVEmulator) nkv_close() error {
+        return nil
+}
+

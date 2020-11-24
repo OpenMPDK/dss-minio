@@ -42,23 +42,27 @@ type streamingBitrotWriter struct {
 func (b *streamingBitrotWriter) Write(p []byte) (int, error) {
 	if b.currentBlockIdx < b.verifyTillIdx && int64(len(p)) != b.shardSize {
 		// All blocks except last should be of the length b.shardSize
+                fmt.Println("### wrong length !! ::", b.shardSize, len(p), b.currentBlockIdx, b.verifyTillIdx)
 		logger.LogIf(context.Background(), errUnexpected)
 		return 0, errUnexpected
 	}
 	if len(p) == 0 {
 		return 0, nil
 	}
-	b.h.Reset()
-	b.h.Write(p)
-	hashBytes := b.h.Sum(nil)
-	n, err := b.iow.Write(hashBytes)
-	if n != len(hashBytes) {
+        //fmt.Println("### Write ::",b.shardSize, len(p))
+        if (!globalZeroCopyReader) {
+	  b.h.Reset()
+	  b.h.Write(p)
+	  hashBytes := b.h.Sum(nil)
+	  n, err := b.iow.Write(hashBytes)
+	  if n != len(hashBytes) {
 		logger.LogIf(context.Background(), err)
 		return 0, err
-	}
-	n, err = b.iow.Write(p)
+	  }
+        }
+	n_p, err_p := b.iow.Write(p)
 	b.currentBlockIdx++
-	return n, err
+	return n_p, err_p
 }
 
 func (b *streamingBitrotWriter) Close() error {
@@ -81,6 +85,9 @@ func newStreamingBitrotWriter(disk StorageAPI, volume, filePath string, length i
 	bw := &streamingBitrotWriter{w, h, shardSize, make(chan struct{}), 0, int(length / shardSize)}
 	go func() {
 		bitrotSumsTotalSize := ceilFrac(length, shardSize) * int64(h.Size()) // Size used for storing bitrot checksums.
+                if (globalZeroCopyReader) {
+                  bitrotSumsTotalSize = 0
+                }
 		totalFileSize := bitrotSumsTotalSize + length
 		err := disk.CreateFile(volume, filePath, totalFileSize, r)
 		if err != nil {
@@ -128,10 +135,12 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		// For the first ReadAt() call we need to open the stream for reading.
 		b.currOffset = offset
 		streamOffset := (offset/b.shardSize)*int64(b.h.Size()) + offset
-                //fmt.Println("### Calling from streamingBitrotReader->ReadAt, volume, filePath, path", b.volume, b.filePath, b.disk.String())
+                //fmt.Println("### Calling from streamingBitrotReader->ReadAt, volume, filePath, path, offset, len ::", 
+                             //b.volume, b.filePath, b.disk.String(), streamOffset, b.tillOffset-streamOffset)
 		b.rc, err = b.disk.ReadFileStream(b.volume, b.filePath, streamOffset, b.tillOffset-streamOffset)
 		if ((b.rc == nil) || (err != nil)) {
 			logger.LogIf(context.Background(), err)
+                        fmt.Println("!!! ReadFileStream failed,  err = ", err, b.volume, b.filePath, b.disk.String())
 			return 0, err
 		}
 	}
@@ -140,19 +149,22 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		return 0, errUnexpected
 	}
 	//b.h.Reset()
-	_, err = io.ReadFull(b.rc, b.hashBytes)
-	if err != nil {
+        //if (!globalZeroCopyReader || len(buf) <= 8192) {
+        if (!globalZeroCopyReader) {
+	  _, err = io.ReadFull(b.rc, b.hashBytes)
+	  if err != nil {
 		logger.LogIf(context.Background(), err)
                 fmt.Println("!!! Read failed during hash read, err = ", err)
 		return 0, err
-	}
+	  }
+        }
 	_, err = io.ReadFull(b.rc, buf)
 	if err != nil {
 		logger.LogIf(context.Background(), err)
                 fmt.Println("!!! Read failed during data read, err = ", err)
 		return 0, err
 	}
-        if (globalDummy_read == 0 && globalVerifyChecksum) {
+        if (globalDummy_read == 0 && globalVerifyChecksum && !globalZeroCopyReader) {
           //fmt.Println("### Doing checksum verify..", b.volume, b.filePath, b.disk.String())
           b.h.Reset()
 	  b.h.Write(buf)
@@ -172,12 +184,16 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 func newStreamingBitrotReader(disk StorageAPI, volume, filePath string, tillOffset int64, algo BitrotAlgorithm, shardSize int64) *streamingBitrotReader {
         //fmt.Println("##newStreamingBitrotReader, volume, filePath, tillOffset, shardSize", volume, filePath, tillOffset, shardSize)
 	h := algo.New()
+        if (!globalZeroCopyReader) {
+         tillOffset += ceilFrac(tillOffset, shardSize)*int64(h.Size())
+        }
+        
 	return &streamingBitrotReader{
 		disk,
 		nil,
 		volume,
 		filePath,
-		ceilFrac(tillOffset, shardSize)*int64(h.Size()) + tillOffset,
+		tillOffset,
 		0,
 		h,
 		shardSize,

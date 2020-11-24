@@ -170,10 +170,12 @@ var (
         globalSC_read bool 
         globalNolock_read bool 
         globalDontUseECMemPool bool 
+        globalZeroCopyReader bool 
         globalECBlockSizeKB int64 
         globalInstanceHost string
         globalTotalGetQD uint64
         globalTotalECReqQD uint64
+        globalIsStopping bool = false
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()
