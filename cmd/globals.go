@@ -171,6 +171,7 @@ var (
         globalNolock_read bool 
         globalDontUseECMemPool bool 
         globalZeroCopyReader bool 
+        globalOptimizedMetaReader bool 
         globalECBlockSizeKB int64 
         globalInstanceHost string
         globalTotalGetQD uint64

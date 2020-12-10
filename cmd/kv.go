@@ -685,6 +685,7 @@ func (k *KV) Put(keyStr string, value []byte) error {
 	if k.sync {
 		cstatus := C.minio_nkv_put(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), valuePtr, C.int(len(value)))
 		status = int(cstatus)
+                //fmt.Println("##### Put happened, ", k.path, keyStr, len(value))
 	} else {
 		ch := make(chan asyncKVLoopResponse, 1)
 		var response asyncKVLoopResponse
@@ -852,6 +853,7 @@ func (k *KV) Delete(keyStr string) error {
 	if k.sync {
 		cstatus := C.minio_nkv_delete(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)))
 		status = int(cstatus)
+                //fmt.Println("##### Del happened, ", k.path, keyStr)
 	} else {
 		ch := make(chan asyncKVLoopResponse, 1)
 		var response asyncKVLoopResponse

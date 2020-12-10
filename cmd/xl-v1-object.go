@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"sync"
         "fmt"
+        "hash/crc32"
         //"runtime/debug"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/hash"
@@ -319,7 +320,7 @@ func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, 
                         partLength = length - totalBytesRead
                 }
                 tillOffset := erasure.ShardFileTillOffset(partOffset, partLength, partSize)
-                //fmt.Println("### partIndex, partName, partSize, partLength, partOffset, tillOffset, ec.shard = ", partIndex, partName, partSize, partLength, partOffset, tillOffset, erasure.ShardSize())
+                //fmt.Println("### partIndex, partName, partSize, partLength, partOffset, tillOffset, ec.shard = ", partIndex, partName, partSize, partLength, partOffset, tillOffset, erasure.ShardSize(), len(onlineDisks))
                 // Get the checksums of the current part.
                 readers := make([]io.ReaderAt, len(onlineDisks))
                 for index, disk := range onlineDisks {
@@ -327,6 +328,7 @@ func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, 
                                 continue
                         }
                         checksumInfo := metaArr[index].Erasure.GetChecksumInfo(partName)
+                        //fmt.Println("### Creating reader ::", disk, pathJoin(object, partName), tillOffset, checksumInfo.Algorithm, checksumInfo.Hash, erasure.ShardSize())
                         readers[index] = newBitrotReader(disk, bucket, pathJoin(object, partName), tillOffset, checksumInfo.Algorithm, checksumInfo.Hash, erasure.ShardSize())
                 }
                 err := erasure.Decode(ctx, writer, readers, partOffset, partLength, partSize)
@@ -569,26 +571,47 @@ func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object str
         disks := xl.getDisks()
 
         // Read metadata associated with the object from all disks.
-        metaArr, errs := readAllXLMetadata(ctx, disks, bucket, object)
+        if (!globalOptimizedMetaReader) {
+          metaArr, errs := readAllXLMetadata(ctx, disks, bucket, object)
 
-        readQuorum, _, err := objectQuorumFromMeta(ctx, xl, metaArr, errs)
-        if err != nil {
+          readQuorum, _, err := objectQuorumFromMeta(ctx, xl, metaArr, errs)
+          if err != nil {
                 return objInfo, nil, xlMetaV1{}, errs, err
-        }
+          }
+          // List all the file commit ids from parts metadata.
+          modTimes := listObjectModtimes(metaArr, errs)
 
-        // List all the file commit ids from parts metadata.
-        modTimes := listObjectModtimes(metaArr, errs)
+          // Reduce list of UUIDs to a single common value.
+          modTime, _ := commonTime(modTimes)
 
-        // Reduce list of UUIDs to a single common value.
-        modTime, _ := commonTime(modTimes)
-
-        // Pick latest valid metadata.
-        xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
-        if err != nil {
+          // Pick latest valid metadata.
+          xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
+          if err != nil {
                 return objInfo, nil, xlMeta, errs, err
-        }
+          }
+          return xlMeta.ToObjectInfo(bucket, object), metaArr, xlMeta, errs, nil
 
-        return xlMeta.ToObjectInfo(bucket, object), metaArr, xlMeta, errs, nil
+        } else {
+
+          keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+          index := int(keyCrc % uint32(len(disks)))
+          //fmt.Println("## Index for getting meta = ", index, disks[index])
+          xlMeta, err := readXLMeta(ctx, disks[index], bucket, object)
+          errs := make([]error, len(disks))
+          if err != nil {
+            errs[index] = err
+          }
+          metaArr = make([]xlMetaV1, len(disks))
+          for index, disk := range disks {
+            if disk == nil {
+              errs[index] = errDiskNotFound
+              continue
+            }
+            metaArr[index] = xlMeta
+          }
+          return xlMeta.ToObjectInfo(bucket, object), metaArr, xlMeta, errs, nil
+        }
+        
 }
 
 

@@ -452,6 +452,13 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           globalZeroCopyReader = true
         }
 
+        globalOptimizedMetaReader = true
+        if os.Getenv("MINIO_DISABLE_OPTIMIZED_META_READ") != "" {
+          fmt.Println("### Setting up non-optimized meta read during read.. ###")
+          globalOptimizedMetaReader = false
+        }
+
+
         globalDummy_read = -1
        
 	return s, nil
@@ -637,7 +644,6 @@ func (s *xlSets) ListObjectsV2(ctx context.Context, bucket, prefix, continuation
 	if marker == "" {
 		marker = startAfter
 	}
-
 	loi, err := s.ListObjects(ctx, bucket, prefix, marker, delimiter, maxKeys)
 	if err != nil {
 		return result, err
@@ -814,6 +820,7 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
 			  }(index, disk)
                         } else {
                           var err error
+                          //fmt.Println("#### calling List dir on disk = ", disk)
                           diskEntries[0], err = disk.ListDir(bucket, prefixDir, -1)
                           if (err == nil) {
                             break;
@@ -885,9 +892,9 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
                                 }
 			}
                         //Assumption is for NKV shared both EC set going to same subsystem but from different path
-                        if (globalNkvShared) {
+                        /*if (globalNkvShared) {
                           break;
-                        }
+                        }*/
 		}
 		return filterListEntries(bucket, prefixDir, mergedEntries, prefixEntry, isLeaf)
 	}
@@ -913,6 +920,7 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 	if delimiter == slashSeparator {
 		recursive = false
 	}
+        //fmt.Printf("### ListObjects:: bucket = %s, prefix = %s, delimiter = %s\n", bucket, prefix, delimiter)
 	walkResultCh, endWalkCh := s.listPool.Release(listParams{bucket, recursive, marker, prefix})
 	if walkResultCh == nil {
 		endWalkCh = make(chan struct{})

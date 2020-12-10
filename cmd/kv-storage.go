@@ -352,7 +352,7 @@ func (k *KVStorage) ListDir(volume, dirPath string, count int) ([]string, error)
                 fmt.Println("### Error during kv.List = ", volume, dirPath, err)
 		return nil, err
 	}
-        //fmt.Println("## Num list entries from ListDir = ", volume, dirPath, len(entries), entries)
+        //fmt.Println("## Num list entries from ListDir = ", volume, dirPath, k.path, len(entries), entries)
 	return entries, nil
 }
 
