@@ -20,6 +20,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+        //"fmt"
 	"github.com/minio/minio-go/pkg/s3utils"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/policy"
@@ -158,11 +159,15 @@ func (xl xlObjects) getBucketInfo(ctx context.Context, bucketName string) (bucke
 
 // GetBucketInfo - returns BucketInfo for a bucket.
 func (xl xlObjects) GetBucketInfo(ctx context.Context, bucket string) (bi BucketInfo, e error) {
-	bucketLock := xl.nsMutex.NewNSLock(bucket, "")
-	if e := bucketLock.GetRLock(globalObjectTimeout); e != nil {
+        //fmt.Println("### GetBucketInfo called::", bucket)
+        if (!globalNolock_write) {
+	  bucketLock := xl.nsMutex.NewNSLock(bucket, "")
+	  if e := bucketLock.GetRLock(globalObjectTimeout); e != nil {
 		return bi, e
-	}
-	defer bucketLock.RUnlock()
+	  }
+	  defer bucketLock.RUnlock()
+        }
+
 	bucketInfo, err := xl.getBucketInfo(ctx, bucket)
 	if err != nil {
 		return bi, toObjectErr(err, bucket)

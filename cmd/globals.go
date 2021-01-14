@@ -169,6 +169,9 @@ var (
         globalVerifyChecksum bool 
         globalSC_read bool 
         globalNolock_read bool 
+        globalNolock_write bool 
+        globalNotransaction_write bool 
+        globalDo_Write_Opt bool
         globalDontUseECMemPool bool 
         globalZeroCopyReader bool 
         globalOptimizedMetaReader bool 

@@ -398,9 +398,9 @@ func (k *KVStorage) DeleteDir(volume, dirPath string) error {
 }
 
 func (k *KVStorage) CreateFile(volume, filePath string, size int64, reader io.Reader) error {
-	if err := k.verifyVolume(volume); err != nil {
+	/*if err := k.verifyVolume(volume); err != nil {
 		return err
-	}
+	}*/
 	nskey := pathJoin(volume, filePath)
 	entry := KVNSEntry{Key: nskey, Size: size, ModTime: time.Now()}
 	bufp := kvValuePool.Get().(*[]byte)

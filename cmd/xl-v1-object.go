@@ -723,12 +723,14 @@ func (xl xlObjects) PutObject(ctx context.Context, bucket string, object string,
 		return ObjectInfo{}, err
 	}
 
-	// Lock the object.
-	objectLock := xl.nsMutex.NewNSLock(bucket, object)
-	if err := objectLock.GetLock(globalObjectTimeout); err != nil {
+        if (!globalNolock_write) {
+	  // Lock the object.
+	  objectLock := xl.nsMutex.NewNSLock(bucket, object)
+	  if err := objectLock.GetLock(globalObjectTimeout); err != nil {
 		return objInfo, err
-	}
-	defer objectLock.Unlock()
+	  }
+	  defer objectLock.Unlock()
+        }
 	return xl.putObject(ctx, bucket, object, data, opts)
 }
 
@@ -797,10 +799,11 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 	// Check if an object is present as one of the parent dir.
 	// -- FIXME. (needs a new kind of lock).
 	// -- FIXME (this also causes performance issue when disks are down).
-	if xl.parentDirIsObject(ctx, bucket, path.Dir(object)) {
+        if (!globalDo_Write_Opt) {
+	  if xl.parentDirIsObject(ctx, bucket, path.Dir(object)) {
 		return ObjectInfo{}, toObjectErr(errFileAccessDenied, bucket, object)
-	}
-
+	  }
+        }
 	// Limit the reader to its provided size if specified.
 	var reader io.Reader = data
 
@@ -819,7 +822,6 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 
 	// Total size of the written object
 	var sizeWritten int64
-
 	erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
 	if err != nil {
 		return ObjectInfo{}, toObjectErr(err, bucket, object)
@@ -872,7 +874,11 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 			if disk == nil {
 				continue
 			}
-			writers[i] = newBitrotWriter(disk, minioMetaTmpBucket, tempErasureObj, erasure.ShardFileSize(curPartSize), DefaultBitrotAlgorithm, erasure.ShardSize())
+                        if (!globalNotransaction_write) {
+			  writers[i] = newBitrotWriter(disk, minioMetaTmpBucket, tempErasureObj, erasure.ShardFileSize(curPartSize), DefaultBitrotAlgorithm, erasure.ShardSize())
+                        } else {
+                          writers[i] = newBitrotWriter(disk, bucket, pathJoin(object, partName), erasure.ShardFileSize(curPartSize), DefaultBitrotAlgorithm, erasure.ShardSize())
+                        }
 		}
 
 		n, erasureErr := erasure.Encode(ctx, curPartReader, writers, buffer, erasure.dataBlocks+1)
@@ -880,7 +886,11 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 		// we return from this function.
 		closeBitrotWriters(writers)
 		if erasureErr != nil {
+                      if (!globalNotransaction_write) {
 			return ObjectInfo{}, toObjectErr(erasureErr, minioMetaTmpBucket, tempErasureObj)
+                      } else {
+			return ObjectInfo{}, toObjectErr(erasureErr, bucket, pathJoin(object, partName))
+                      }
 		}
 
 		// Should return IncompleteBody{} error when reader has fewer bytes
@@ -895,10 +905,19 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 			// The last part of a compressed object will always be empty
 			// Since the compressed size is unpredictable.
 			// Hence removing the last (empty) part from all `xl.disks`.
-			dErr := xl.deleteObject(ctx, minioMetaTmpBucket, tempErasureObj, writeQuorum, true)
-			if dErr != nil {
+                        if (!globalNotransaction_write) {
+			  dErr := xl.deleteObject(ctx, minioMetaTmpBucket, tempErasureObj, writeQuorum, true)
+			  if dErr != nil {
 				return ObjectInfo{}, toObjectErr(dErr, minioMetaTmpBucket, tempErasureObj)
-			}
+			  }
+                        } else {
+                          dErr := xl.deleteObject(ctx, bucket,  pathJoin(object, partName), writeQuorum, true)
+                          if dErr != nil {
+                                return ObjectInfo{}, toObjectErr(dErr, bucket,  pathJoin(object, partName))
+                          }
+
+                        }
+
 			break
 		}
 
@@ -930,25 +949,27 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 		opts.UserDefined["content-type"] = mimedb.TypeByExtension(path.Ext(object))
 	}
 
-	if xl.isObject(bucket, object) {
+	if (!globalDo_Write_Opt && xl.isObject(bucket, object)) {
 		// Deny if WORM is enabled
 		if globalWORMEnabled {
 			return ObjectInfo{}, ObjectAlreadyExists{Bucket: bucket, Object: object}
 		}
 
 		// Rename if an object already exists to temporary location.
-		newUniqueID := mustGetUUID()
+                if (!globalNotransaction_write) {
+		  newUniqueID := mustGetUUID()
 
-		// Delete successfully renamed object.
-		defer xl.deleteObject(ctx, minioMetaTmpBucket, newUniqueID, writeQuorum, false)
+		  // Delete successfully renamed object.
+		  defer xl.deleteObject(ctx, minioMetaTmpBucket, newUniqueID, writeQuorum, false)
 
-		// NOTE: Do not use online disks slice here: the reason is that existing object should be purged
-		// regardless of `xl.json` status and rolled back in case of errors. Also allow renaming the
-		// existing object if it is not present in quorum disks so users can overwrite stale objects.
-		_, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, newUniqueID, true, writeQuorum, []error{errFileNotFound})
-		if err != nil {
+		  // NOTE: Do not use online disks slice here: the reason is that existing object should be purged
+		  // regardless of `xl.json` status and rolled back in case of errors. Also allow renaming the
+		  // existing object if it is not present in quorum disks so users can overwrite stale objects.
+		  _, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, newUniqueID, true, writeQuorum, []error{errFileNotFound})
+		  if err != nil {
 			return ObjectInfo{}, toObjectErr(err, bucket, object)
-		}
+		  }
+                }
 	}
 
 	// Fill all the necessary metadata.
@@ -959,16 +980,21 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 		partsMetadata[index].Stat.ModTime = modTime
 	}
 
-	// Write unique `xl.json` for each disk.
-	if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempObj, partsMetadata, writeQuorum); err != nil {
+        if (!globalNotransaction_write) {
+	  // Write unique `xl.json` for each disk.
+	  if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempObj, partsMetadata, writeQuorum); err != nil {
 		return ObjectInfo{}, toObjectErr(err, bucket, object)
-	}
+	  }
 
-	// Rename the successfully written temporary object to final location.
-	if _, err = rename(ctx, onlineDisks, minioMetaTmpBucket, tempObj, bucket, object, true, writeQuorum, nil); err != nil {
+	  // Rename the successfully written temporary object to final location.
+	  if _, err = rename(ctx, onlineDisks, minioMetaTmpBucket, tempObj, bucket, object, true, writeQuorum, nil); err != nil {
 		return ObjectInfo{}, toObjectErr(err, bucket, object)
-	}
-
+	  }
+        } else {
+          if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, bucket, object, partsMetadata, writeQuorum); err != nil {
+                return ObjectInfo{}, toObjectErr(err, bucket, object)
+          }          
+        }
 	// Object info is the same in all disks, so we can pick the first meta
 	// of the first disk
 	xlMeta = partsMetadata[0]
@@ -1080,11 +1106,14 @@ func (xl xlObjects) deleteObject(ctx context.Context, bucket, object string, wri
 // response to the client request.
 func (xl xlObjects) DeleteObject(ctx context.Context, bucket, object string) (err error) {
 	// Acquire a write lock before deleting the object.
-	objectLock := xl.nsMutex.NewNSLock(bucket, object)
-	if perr := objectLock.GetLock(globalOperationTimeout); perr != nil {
+       
+        if (!globalNolock_write) {
+	  objectLock := xl.nsMutex.NewNSLock(bucket, object)
+	  if perr := objectLock.GetLock(globalOperationTimeout); perr != nil {
 		return perr
-	}
-	defer objectLock.Unlock()
+	  }
+	  defer objectLock.Unlock()
+        }
 
 	if err = checkDelObjArgs(ctx, bucket, object); err != nil {
 		return err

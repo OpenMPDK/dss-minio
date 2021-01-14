@@ -440,6 +440,24 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           globalNolock_read = true
         }
 
+        globalNolock_write = false
+        if os.Getenv("MINIO_ENABLE_NO_LOCK_WRITE") != "" {
+          fmt.Println("### Setting up for no Lock during write.. ###")
+          globalNolock_write = true
+        }
+
+        globalDo_Write_Opt = false
+        if os.Getenv("MINIO_ENABLE_OPT_WRITE") != "" {
+          fmt.Println("### Setting up for optimized write.. ###")
+          globalDo_Write_Opt = true
+        }
+
+        globalNotransaction_write = false
+        if os.Getenv("MINIO_ENABLE_NON_TRANSACTIONAL_WRITE") != "" {
+          fmt.Println("### Setting up for non transactional write.. ###")
+          globalNotransaction_write = true
+        }
+
         globalVerifyChecksum = true
         if os.Getenv("MINIO_ENABLE_NO_READ_VERIFY") != "" {
           fmt.Println("### Setting up for no checksum verify during read.. ###")
