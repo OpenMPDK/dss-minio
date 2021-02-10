@@ -480,7 +480,7 @@ var kvValuePoolList = sync.Pool{
         },
 }
 
-const kvKeyLength = 255
+const kvKeyLength = 1024
 
 var kvMu sync.Mutex
 var kvSerialize = os.Getenv("MINIO_NKV_SERIALIZE") != ""
@@ -663,7 +663,8 @@ func (k *KV) Put(keyStr string, value []byte) error {
 	// }
 	if len(key) > kvKeyLength {
 		fmt.Println("##### invalid key length", key, len(key))
-		os.Exit(0)
+		//os.Exit(0)
+                return errKeyLengthBig
 	}
 	var valuePtr unsafe.Pointer
 	if len(value) > 0 {
@@ -737,7 +738,8 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 	// }
 	if len(key) > kvKeyLength {
 		fmt.Println("##### invalid key length", key, len(key))
-		os.Exit(0)
+                return nil, errKeyLengthBig
+		//os.Exit(0)
 	}
 	var actualLength int
 
@@ -834,7 +836,8 @@ func (k *KV) Delete(keyStr string) error {
 	// }
 	if len(key) > kvKeyLength {
 		fmt.Println("##### invalid key length", key, len(key))
-		os.Exit(0)
+		//os.Exit(0)
+                return errKeyLengthBig
 	}
 	var hashSum *kvHashSum
 	if kvChecksum {

@@ -24,6 +24,7 @@ import (
 	"path"
 	"sync"
 	"time"
+        "fmt"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/tidwall/gjson"
 )
@@ -316,6 +317,7 @@ func readXLMeta(ctx context.Context, disk StorageAPI, bucket string, object stri
 	// obtain xlMetaV1{} using `github.com/tidwall/gjson`.
 	xlMeta, err = xlMetaV1UnmarshalJSON(ctx, xlMetaBuf)
 	if err != nil {
+                fmt.Println("###Error unmershalling metadata:", path.Join(object, xlMetaJSONFile), err, xlMetaBuf)
 		logger.GetReqInfo(ctx).AppendTags("disk", disk.String())
 		logger.LogIf(ctx, err)
 		return xlMetaV1{}, err

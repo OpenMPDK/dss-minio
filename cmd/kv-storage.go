@@ -1091,7 +1091,7 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
         //debug.PrintStack()
 	r, err := k.ReadFileStream(volume, filePath, 0, -1)
 	if (r == nil || err != nil) {
-                fmt.Println("??? Got error while ReadFileStream ???", volume, filePath, err)
+                fmt.Println("WARN: Got error while ReadFileStream ???", volume, filePath, err)
                 if (r != nil) {
                   r.Close()
                 }
@@ -1099,7 +1099,7 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
 	}
 	r_b, err_r := ioutil.ReadAll(r)
 	if err_r != nil {
-	  fmt.Println("??? Got error during read ???", err_r, pathJoin(volume, filePath))
+	  fmt.Println("ERROR: Got error during read ???", err_r, pathJoin(volume, filePath))
           r.Close()
           return nil, err_r
 	}

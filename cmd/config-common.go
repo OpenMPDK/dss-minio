@@ -136,9 +136,10 @@ func checkConfig(ctx context.Context, objAPI ObjectLayer, configFile string) err
 	if globalEtcdClient != nil {
 		return checkConfigEtcd(ctx, globalEtcdClient, configFile)
 	}
-
+        fmt.Println("## checkConfig :", configFile)
 	if _, err := objAPI.GetObjectInfo(ctx, minioMetaBucket, configFile, ObjectOptions{}); err != nil {
 		// Treat object not found as config not found.
+                fmt.Println("## checkConfig Error:", configFile, err)
 		if isErrObjectNotFound(err) {
 			return errConfigNotFound
 		}

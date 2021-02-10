@@ -32,7 +32,6 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
-
 	snappy "github.com/golang/snappy"
 	"github.com/minio/minio-go/pkg/s3utils"
 	"github.com/minio/minio/cmd/crypto"
@@ -650,6 +649,11 @@ func (g *GetObjectReader) Read(p []byte) (n int, err error) {
 	if err != nil {
 		// Calling code may not Close() in case of error, so
 		// we ensure it.
+                if (err == io.ErrClosedPipe) {
+                  //Hack, not sure why client is closing the pipe !!
+                  fmt.Println("## Pipe closed by client, just returning EOF ")
+                  err = io.EOF
+                }
 		g.Close()
 	}
 	return

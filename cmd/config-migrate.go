@@ -2419,9 +2419,9 @@ func migrateConfigToMinioSys(objAPI ObjectLayer) (err error) {
 
 	// Verify if config was already available in .minio.sys in which case, nothing more to be done.
 	if err = checkConfig(context.Background(), objAPI, configFile); err != errConfigNotFound {
+                fmt.Println("### In migrateConfigToMinioSys, Error:", configFile, err)
 		return err
 	}
-
 	defer func() {
 		// Rename config.json to config.json.deprecated only upon
 		// success of this function.
@@ -2471,12 +2471,12 @@ func migrateMinioSysConfig(objAPI ObjectLayer) error {
 	// Check if the config version is latest, if not migrate.
 	ok, _, err := checkConfigVersion(objAPI, configFile, serverConfigVersion)
 	if err != nil {
+                fmt.Println("### In migrateMinioSysConfig, error = ", err, configFile)
 		return err
 	}
 	if ok {
 		return nil
 	}
-
 	// Construct path to config.json for the given bucket.
 	transactionConfigFile := configFile + ".transaction"
 
@@ -2516,9 +2516,9 @@ func checkConfigVersion(objAPI ObjectLayer, configFile string, version string) (
 	var versionConfig struct {
 		Version string `json:"version"`
 	}
-
 	vcfg := &versionConfig
 	if err = json.Unmarshal(data, vcfg); err != nil {
+                fmt.Println("## Unmarshal Error during checkConfigVersion:", configFile, err);
 		return false, nil, err
 	}
 	return vcfg.Version == version, data, nil

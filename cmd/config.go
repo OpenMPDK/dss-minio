@@ -23,7 +23,7 @@ import (
 	"path"
 	"runtime"
 	"strings"
-
+        "fmt"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/quick"
 )
@@ -73,7 +73,6 @@ func saveServerConfig(ctx context.Context, objAPI ObjectLayer, config *serverCon
 func readServerConfig(ctx context.Context, objAPI ObjectLayer) (*serverConfig, error) {
 	var configData []byte
 	var err error
-
 	configFile := path.Join(minioConfigPrefix, minioConfigFile)
 	if globalEtcdClient != nil {
 		configData, err = readConfigEtcd(ctx, globalEtcdClient, configFile)
@@ -94,6 +93,7 @@ func readServerConfig(ctx context.Context, objAPI ObjectLayer) (*serverConfig, e
 
 	var config = &serverConfig{}
 	if err = json.Unmarshal(configData, config); err != nil {
+                fmt.Println("#### In readServerConfig, unmarshat error: ", err)
 		return nil, err
 	}
 
@@ -185,9 +185,9 @@ func initConfig(objAPI ObjectLayer) error {
 		if err := migrateConfigToMinioSys(objAPI); err != nil {
 			return err
 		}
-
 		// Migrates backend '<export_path>/.minio.sys/config/config.json' to latest version.
 		if err := migrateMinioSysConfig(objAPI); err != nil {
+                        fmt.Println("## in initConfig, error from migrateMinioSysConfig", err)
 			return err
 		}
 	}

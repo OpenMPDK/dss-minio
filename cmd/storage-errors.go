@@ -85,6 +85,10 @@ var errLessData = errors.New("less data available than what was requested")
 // errMoreData = returned when more data was sent by the caller than what it was supposed to.
 var errMoreData = errors.New("more data was sent than what was advertised")
 
+// errKeyLengthBig = returned when key length supplied is longer than supported
+var errKeyLengthBig = errors.New("more data was sent than what was advertised")
+
+
 // hashMisMatchError - represents a bit-rot hash verification failure
 // error.
 type hashMismatchError struct {
