@@ -101,12 +101,11 @@ type isLeafDirFunc func(string, string) bool
 
 func filterListEntries(bucket, prefixDir string, entries []string, prefixEntry string, isLeaf isLeafFunc) ([]string, bool) {
 	// Listing needs to be sorted.
-        if (!globalMinio_on_kv) {
-	  sort.Strings(entries)
+        //if (!globalMinio_on_kv) {
+	sort.Strings(entries)
 
-	  // Filter entries that have the prefix prefixEntry.
-	  entries = filterMatchingPrefix(entries, prefixEntry)
-        }
+	// Filter entries that have the prefix prefixEntry.
+	entries = filterMatchingPrefix(entries, prefixEntry)
 
 	// Can isLeaf() check be delayed till when it has to be sent down the
 	// treeWalkResult channel?
@@ -123,9 +122,9 @@ func filterListEntries(bucket, prefixDir string, entries []string, prefixEntry s
 	}
 	// Sort again after removing trailing "/" for objects as the previous sort
 	// does not hold good anymore.
-        if (!globalMinio_on_kv) {
-	  sort.Strings(entries)
-        }
+        //if (!globalMinio_on_kv) {
+	sort.Strings(entries)
+        
 	return entries, false
 }
 
