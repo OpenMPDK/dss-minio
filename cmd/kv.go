@@ -144,7 +144,7 @@ static int minio_nkv_delete(struct minio_nkv_handle *handle, void *key, int keyL
   return result;
 }
 
-#define LIST_KEYS_COUNT 10000
+#define LIST_KEYS_COUNT 1000
 
 static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int prefixLen, void *buf, int bufLen, int *numKeys, void **iter_context) {
   nkv_result result;
@@ -156,15 +156,15 @@ static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int pre
 
   uint32_t max_keys = LIST_KEYS_COUNT;
   nkv_key keys_out[LIST_KEYS_COUNT];
-  char keys[LIST_KEYS_COUNT][256];
+  char keys[LIST_KEYS_COUNT][1024];
   for (int iter = 0; iter < LIST_KEYS_COUNT; iter++) {
     memset(&keys_out[iter], 0, sizeof(nkv_key));
-    memset(keys[iter], 0, 256);
+    memset(keys[iter], 0, 1024);
     keys_out[iter].key = keys[iter];
-    keys_out[iter].length = 256;
+    keys_out[iter].length = 1024;
   }
-  char prefixStr[257];
-  memset(prefixStr, 0, 257);
+  char prefixStr[1024];
+  memset(prefixStr, 0, 1024);
   strncpy(prefixStr, prefix, prefixLen);
   result = nkv_indexing_list_keys(handle->nkv_handle, &ctx, NULL, prefixStr, "/", NULL, &max_keys, keys_out, iter_context);
   *numKeys = (int)max_keys;
@@ -908,6 +908,7 @@ func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 		buf := b
 		cstatus := C.minio_nkv_list(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), unsafe.Pointer(&buf[0]), C.int(len(buf)), &numKeysC, &iterContext)
 		if cstatus != 0 && cstatus != 0x01F {
+                        fmt.Println("## List failed, error = ", keyStr, cstatus)
 			return nil, errFileNotFound
 		}
 		numKeys = int(numKeysC)
@@ -924,6 +925,7 @@ func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 			break
 		}
 	}
+        //fmt.Println("## List success, keys = ", numKeys, keyStr, entries)
 	return entries, nil
 }
 
