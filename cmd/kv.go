@@ -144,7 +144,7 @@ static int minio_nkv_delete(struct minio_nkv_handle *handle, void *key, int keyL
   return result;
 }
 
-#define LIST_KEYS_COUNT 1000
+#define LIST_KEYS_COUNT 100
 
 static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int prefixLen, void *buf, int bufLen, int *numKeys, void **iter_context) {
   nkv_result result;
@@ -153,7 +153,10 @@ static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int pre
   ctx.container_hash = handle->container_hash;
   ctx.network_path_hash = handle->network_path_hash;
   ctx.ks_id = 0;
-
+  if (buf == NULL) {
+    printf("### minio_nkv_list, null buffer provided !!");
+    return 1;
+  }
   uint32_t max_keys = LIST_KEYS_COUNT;
   nkv_key keys_out[LIST_KEYS_COUNT];
   char keys[LIST_KEYS_COUNT][1024];
@@ -169,6 +172,7 @@ static int minio_nkv_list(struct minio_nkv_handle *handle, void *prefix, int pre
   result = nkv_indexing_list_keys(handle->nkv_handle, &ctx, NULL, prefixStr, "/", NULL, &max_keys, keys_out, iter_context);
   *numKeys = (int)max_keys;
   char *bufChar = (char *) buf;
+  memset(bufChar, 0, bufLen);
   for (int iter = 0; iter < *numKeys; iter++) {
     strncpy(bufChar, keys_out[iter].key, keys_out[iter].length);
     bufChar += keys_out[iter].length;
@@ -902,6 +906,7 @@ func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 	key := []byte(keyStr)
 	var numKeysC C.int
 	var numKeys int
+	var numKeysTotal int = 0
 	var entries []string
 	var iterContext unsafe.Pointer
 	for {
@@ -912,9 +917,11 @@ func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 			return nil, errFileNotFound
 		}
 		numKeys = int(numKeysC)
+                numKeysTotal += numKeys
 		for i := 0; i < numKeys; i++ {
 			index := bytes.IndexByte(buf, '\x00')
 			if index == -1 {
+                                //fmt.Println("## List got wrong data ::", keyStr, k.path, i, buf)
 				break
 			}
 			entries = append(entries, string(buf[:index]))
@@ -925,7 +932,8 @@ func (k *KV) List(keyStr string, b []byte) ([]string, error) {
 			break
 		}
 	}
-        //fmt.Println("## List success, keys = ", numKeys, keyStr, entries)
+        //fmt.Println("## List success, keys = ", numKeysTotal, keyStr, entries)
+        //fmt.Println("## List success, keys = ", numKeysTotal, keyStr, len(entries), k.path)
 	return entries, nil
 }
 
