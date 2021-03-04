@@ -666,7 +666,7 @@ func (k *KV) Put(keyStr string, value []byte) error {
 	// 	}
 	// }
 	if len(key) > kvKeyLength {
-		fmt.Println("##### invalid key length", key, len(key), kvKeyLength)
+		fmt.Println("##### invalid key length", keyStr, len(key), kvKeyLength)
 		//os.Exit(0)
                 return errKeyLengthBig
 	}
@@ -741,7 +741,7 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 	// 	}
 	// }
 	if len(key) > kvKeyLength {
-		fmt.Println("##### invalid key length", key, len(key), kvKeyLength)
+		fmt.Println("##### invalid key length", keyStr, len(key), kvKeyLength)
                 return nil, errKeyLengthBig
 		//os.Exit(0)
 	}
@@ -839,7 +839,7 @@ func (k *KV) Delete(keyStr string) error {
 	// 	}
 	// }
 	if len(key) > kvKeyLength {
-		fmt.Println("##### invalid key length", key, len(key), kvKeyLength)
+		fmt.Println("##### invalid key length", keyStr, len(key), kvKeyLength)
 		//os.Exit(0)
                 return errKeyLengthBig
 	}
