@@ -288,10 +288,18 @@ func serverMain(ctx *cli.Context) {
 
 	// Configure server.
 	var handler http.Handler
-	handler, err = configureServerHandler(globalEndpoints)
-	if err != nil {
+        if (!globalNkvShared) {
+	  handler, err = configureServerHandler(globalEndpoints)
+	  if err != nil {
 		logger.Fatal(uiErrUnexpectedError(err), "Unable to configure one of server's RPC services")
-	}
+	  }
+        } else {
+          handler, err = configureServerHandler(globalEndpointsLocal)
+          if err != nil {
+                logger.Fatal(uiErrUnexpectedError(err), "Unable to configure one of server's RPC services")
+          }
+
+        }
 
 	var getCert certs.GetCertificateFunc
 	if globalTLSCerts != nil {
