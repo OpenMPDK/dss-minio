@@ -308,20 +308,35 @@ func (k *KVStorage) ListDirForRename(volume, dirPath string, count int) ([]strin
      
 	nskey := pathJoin(volume, dirPath, "xl.json")
 
-	entry, err := k.getKVNSEntry(nskey)
-	if err != nil {
+        var entry KVNSEntry
+        var err error = nil
+        if (!globalMetaOptNoStat) {
+	  entry, err = k.getKVNSEntry(nskey)
+	  if err != nil {
 		return nil, err
-	}
+	  }
+        }
+	//bufp := kvValuePool.Get().(*[]byte)
+	//defer kvValuePool.Put(bufp)
 
-	bufp := kvValuePool.Get().(*[]byte)
-	defer kvValuePool.Put(bufp)
+        bufp := kvValuePoolMeta.Get().(*[]byte)
+        defer kvValuePoolMeta.Put(bufp)
 
 	tries := 10
 	for {
-		value, err := k.kv.Get(k.DataKey(entry.IDs[0]), *bufp)
-		if err != nil {
+                var value []byte
+                if (!globalMetaOptNoStat) {
+		  value, err = k.kv.Get(k.DataKey(entry.IDs[0]), *bufp)
+		  if err != nil {
 			return nil, err
-		}
+		  }
+                } else {
+                  value, err = k.kv.Get(nskey, *bufp)
+                  if err != nil {
+                        return nil, err
+                  }
+
+                }
 		xlMeta, err := xlMetaV1UnmarshalJSON(context.Background(), value)
 		if err != nil {
 			fmt.Println("##### xlMetaV1UnmarshalJSON failed on", k.DataKey(entry.IDs[0]), len(value), string(value))
@@ -403,8 +418,14 @@ func (k *KVStorage) CreateFile(volume, filePath string, size int64, reader io.Re
 	}*/
 	nskey := pathJoin(volume, filePath)
 	entry := KVNSEntry{Key: nskey, Size: size, ModTime: time.Now()}
-	bufp := kvValuePool.Get().(*[]byte)
-	defer kvValuePool.Put(bufp)
+        var bufp *[]byte = nil
+        if (size > 8192) {
+	  bufp = kvValuePool.Get().(*[]byte)
+          defer kvValuePool.Put(bufp)
+        } else {
+          bufp = kvValuePoolMeta.Get().(*[]byte)
+          defer kvValuePoolMeta.Put(bufp)
+        }
 
 	buf := *bufp
 	for {
@@ -431,17 +452,36 @@ func (k *KVStorage) CreateFile(volume, filePath string, size int64, reader io.Re
 				}
 			}
 		}
-		if err = k.kv.Put(k.DataKey(id), buf); err != nil {
+               
+                if (!globalMetaOptNoStat) {
+		  if err = k.kv.Put(k.DataKey(id), buf); err != nil {
 			return err
-		}
-		entry.IDs = append(entry.IDs, id)
-	}
-	b, err := KVNSEntryMarshal(entry, *bufp)
-	if err != nil {
-		return err
-	}
+		  }
+		  entry.IDs = append(entry.IDs, id)
+                } else {
+                  if strings.HasSuffix(nskey, xlMetaJSONFile) {
+                    if err = k.kv.Put(nskey, buf); err != nil {
+                        return err
+                    }
 
-	return k.kv.Put(nskey, b)
+                  } else {
+
+                    if err = k.kv.Put(k.DataKey(nskey), buf); err != nil {
+                        return err
+                    }
+                  }
+                }
+	}
+    
+        if (!globalMetaOptNoStat) {
+	  b, err := KVNSEntryMarshal(entry, *bufp)
+	  if err != nil {
+		return err
+	  }
+	  return k.kv.Put(nskey, b)
+        } else {
+          return nil 
+        }
 }
 
 type Reader struct {
@@ -581,16 +621,26 @@ func NewReader_kv(key string, k *KVStorage, entry KVNSEntry, offset, length int6
             blockOffset = 0
             blockLength = kvMaxValueSize
         }
-        id := entry.IDs[index]
+        //id := entry.IDs[index]
         //fmt.Println("### NewReader_kv ::", globalZeroCopyReader, globalDummy_read, length)
         if ( pool_buf != nil && (globalDummy_read <= 0 || globalDummy_read > 3 )) {
         //if ((!globalZeroCopyReader || length <= 8192) && (globalDummy_read <= 0 || globalDummy_read > 3 )) {
         //if (!globalZeroCopyReader && (globalDummy_read == 0 || globalDummy_read > 3 || length < 4096)) {
           //fmt.Println("### Old way ::", globalZeroCopyReader, globalDummy_read, length, key, k.DataKey(id), k.path)
-          data_b, err := k.kv.Get(k.DataKey(id), *pool_buf)
+          var id string
+          var data_b []byte
+          var err error
+          if (!globalMetaOptNoStat) {
+            id = entry.IDs[index]
+            data_b, err = k.kv.Get(k.DataKey(id), *pool_buf)
+          } else {
+            data_b, err = k.kv.Get(key, *pool_buf)
+            length = int64(len(data_b))
+            blockLength = length
+          }
           if err != nil {
             //debug.PrintStack()
-            fmt.Println("###Error during kv get", key, k.DataKey(id), entry.IDs, err)
+            fmt.Println("###Error during kv get", key, err)
             return nil
           }
 
@@ -683,13 +733,24 @@ func (r *Reader) Read(p []byte) (n int, err error) {
                 blockOffset = 0
                 blockLength = r.kvMaxValueSize
             }
-            id := r.entry.IDs[r.index]
+            //id := r.entry.IDs[r.index]
             //fmt.Println("##### Passing input buffer to kv", n, len(p), len(p) - n, r.offset, r.length, r.kvMaxValueSize, r.k.path)
             //data_bl, err := r.k.kv.Get(r.k.DataKey(id), p[n:n+int(r.kvMaxValueSize)])
             if (globalDummy_read > 0) {
               return len(p), nil
             }
-            data_bl, err := r.k.kv.Get(r.k.DataKey(id), p)
+
+            var id string
+            var data_bl []byte
+            if (!globalMetaOptNoStat) {
+              id = r.entry.IDs[r.index]
+              data_bl, err = r.k.kv.Get(r.k.DataKey(id), p)
+            } else {
+              data_bl, err = r.k.kv.Get(r.key_name, p)
+              r.length = int64(len(data_bl))
+            }
+
+            //data_bl, err := r.k.kv.Get(r.k.DataKey(id), p)
             if err != nil {
                fmt.Println("###Error during kv get", r.key_name, r.k.DataKey(id), err)
                return n, err
@@ -875,19 +936,36 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 	//	return nil, err
 	//}
 	nskey := pathJoin(volume, filePath)
-	entry, err := k.getKVNSEntry(nskey)
-	if err != nil {
+        var entry KVNSEntry
+        var err error = nil
+        if (!globalMetaOptNoStat || !use_custome_reader) {
+	  entry, err = k.getKVNSEntry(nskey)
+	  if err != nil {
 		return nil, err
-	}
-        if (length == -1) {
-          length = entry.Size
-          //fmt.Println("### Adjusted length:: ",length, entry.Size, nskey)
+	  }
+          if (length == -1) {
+            length = entry.Size
+            //fmt.Println("### Adjusted length:: ",length, entry.Size, nskey)
+          }
+        } else {
+          var is_meta bool = false
+          if strings.HasSuffix(nskey, xlMetaJSONFile) {
+            is_meta = true
+          } else {
+            nskey = k.DataKey(nskey)
+          }
+          if (length == -1) { 
+            if is_meta {
+                length = 8192
+            } else {
+              length = int64(kvMaxValueSize)
+            }          
+          }
         }
-
         if (use_custome_reader) {
           r_io := NewReader_kv(nskey, k, entry, offset, length)
           if (r_io == nil) {
-            return r_io, errFaultyDisk
+            return nil, errFileNotFound
           } else {       
             return r_io, nil
           }
@@ -936,6 +1014,7 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 }
 
 func (k *KVStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) error {
+        //debug.PrintStack()
 	if err := k.verifyVolume(srcVolume); err != nil {
 		return err
 	}
@@ -959,27 +1038,39 @@ func (k *KVStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) er
 			err = k.kv.Delete(src)
 			return err
 		}
-		entry, err := k.getKVNSEntry(src)
-		if err != nil {
+                if (!globalMetaOptNoStat) {
+		  entry, err := k.getKVNSEntry(src)
+		  if err != nil {
 			return err
-		}
-		entry.Key = dst
-		value, err := KVNSEntryMarshal(entry, *bufp)
-		if err != nil {
+		  }
+		  entry.Key = dst
+		  value, err := KVNSEntryMarshal(entry, *bufp)
+		  if err != nil {
 			return err
-		}
-		err = k.kv.Put(dst, value)
-		if err != nil {
+		  }
+		  err = k.kv.Put(dst, value)
+		  if err != nil {
 			return err
-		}
-                if (data_chunk_delete) {
-                  for _, id := range entry.IDs {
-                    k.kv.Delete(k.DataKey(id))
+		  }
+                  if (data_chunk_delete) {
+                    for _, id := range entry.IDs {
+                      k.kv.Delete(k.DataKey(id))
+                    }
                   }
+                 } else {
+                   value,err_v := k.kv.Get(src, *bufp)
+                   if err_v != nil {
+                     return err_v
+                   }
+                   err_v = k.kv.Put(dst, value)
+                   if err_v != nil {
+                        return err_v
+                   }
+
                 }
 
-		err = k.kv.Delete(src)
-		return err
+		err_d := k.kv.Delete(src)
+		return err_d
 	}
 
         var del_chunk bool = true
@@ -1018,17 +1109,32 @@ func (k *KVStorage) StatFile(volume string, path string) (fi FileInfo, err error
 	//if err := k.verifyVolume(volume); err != nil {
 	//	return fi, err
 	//}
+        var length int64 = 0; 
+        var ModTime time.Time
 	nskey := pathJoin(volume, path)
-	entry, err := k.getKVNSEntry(nskey)
-	if err != nil {
-		return fi, err
-	}
-
+        var entry KVNSEntry
+        if (!globalMetaOptNoStat) {
+          entry, err = k.getKVNSEntry(nskey)
+          if err != nil {
+                return fi, err
+          }
+          length = entry.Size
+          ModTime = entry.ModTime
+        } else {
+          bufp := kvValuePoolMeta.Get().(*[]byte)
+          defer kvValuePoolMeta.Put(bufp)
+          value,err_v := k.kv.Get(nskey, *bufp)
+          if err_v != nil {
+            return fi, err_v
+          }
+          length = int64(len(value))
+          ModTime = time.Now() 
+        }
 	return FileInfo{
 		Volume:  volume,
 		Name:    path,
-		ModTime: entry.ModTime,
-		Size:    entry.Size,
+		ModTime: ModTime,
+		Size:    length,
 		Mode:    0,
 	}, nil
 }
@@ -1043,13 +1149,16 @@ func (k *KVStorage) DeleteFile(volume string, path string) (err error) {
 		return err
 	}
 	nskey := pathJoin(volume, path)
-	entry, err := k.getKVNSEntry(nskey)
-	if err != nil {
+        
+        if (!globalMetaOptNoStat) {
+	  entry, err := k.getKVNSEntry(nskey)
+	  if err != nil {
 		return err
-	}
-	for _, id := range entry.IDs {
+	  }
+	  for _, id := range entry.IDs {
 		k.kv.Delete(k.DataKey(id))
-	}
+	  }
+        }
 	return k.kv.Delete(nskey)
 }
 

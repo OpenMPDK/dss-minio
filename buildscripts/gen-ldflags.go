@@ -29,12 +29,15 @@ import (
 func genLDFlags(version string) string {
 	ldflagsStr := "-s -w"
 	//ldflagsStr := ""
-	ldflagsStr += " -X github.com/minio/minio/cmd.Version=" + version
-	ldflagsStr += " -X github.com/minio/minio/cmd.ReleaseTag=" + releaseTag(version)
-	ldflagsStr += " -X github.com/minio/minio/cmd.CommitID=" + commitID()
-	ldflagsStr += " -X github.com/minio/minio/cmd.ShortCommitID=" + commitID()[:12]
-	ldflagsStr += " -X github.com/minio/minio/cmd.GOPATH=" + os.Getenv("GOPATH")
-	ldflagsStr += " -X github.com/minio/minio/cmd.GOROOT=" + os.Getenv("GOROOT")
+	//ldflagsStr += " -X github.com/minio/minio/cmd.Version=" + version
+	//ldflagsStr += " -X github.com/minio/minio/cmd.ReleaseTag=" + releaseTag(version)
+	//ldflagsStr += " -X github.com/minio/minio/cmd.Version=" + commitID()
+	ldflagsStr += " -X github.com/minio/minio/cmd.git_version=" + commitID()
+	//ldflagsStr += " \"-X cmd.Version=som\""
+	//ldflagsStr += " -X cmd.Version=" + commitID()
+	//ldflagsStr += " -X github.com/minio/minio/cmd.ShortCommitID=" + commitID()[:12]
+	//ldflagsStr += " -X github.com/minio/minio/cmd.GOPATH=" + os.Getenv("GOPATH")
+	//ldflagsStr += " -X github.com/minio/minio/cmd.GOROOT=" + os.Getenv("GOROOT")
 	return ldflagsStr
 }
 
@@ -59,7 +62,9 @@ func commitID() string {
 		e      error
 	)
 	cmdName := "git"
-	cmdArgs := []string{"log", "--format=%H", "-n1"}
+	//cmdArgs := []string{"log", "--format=%H", "-n1"}
+	cmdArgs := []string{"describe", "--abbrev=4", "--dirty", "--always", "--tags"}
+        //fmt.Println("Executing command = ", cmdName, cmdArgs)
 	if commit, e = exec.Command(cmdName, cmdArgs...).Output(); e != nil {
 		fmt.Fprintln(os.Stderr, "Error generating git commit-id: ", e)
 		os.Exit(1)

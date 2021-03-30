@@ -73,6 +73,7 @@ func (xl xlObjects) isObject(bucket, prefix string) (ok bool) {
 				return
 			}
 		}(index, disk)
+
 	}
 
 	wg.Wait()

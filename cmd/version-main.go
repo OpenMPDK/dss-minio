@@ -21,6 +21,7 @@ import (
 	"github.com/minio/mc/pkg/console"
 )
 
+var git_version string
 var versionCmd = cli.Command{
 	Name:   "version",
 	Usage:  "print version",
@@ -45,7 +46,8 @@ func mainVersion(ctx *cli.Context) {
 		cli.ShowCommandHelpAndExit(ctx, "version", 1)
 	}
 
-	console.Println("Version: " + Version)
-	console.Println("Release-Tag: " + ReleaseTag)
-	console.Println("Commit-ID: " + CommitID)
+	console.Println("Version: " + git_version)
+	//console.Println("Release-Tag: " + ReleaseTag)
+	//console.Println("Commit-ID: " + CommitID)
+	//console.Println("Commit-ID: " + git_commit)
 }

@@ -1054,12 +1054,17 @@ func (xl xlObjects) deleteObject(ctx context.Context, bucket, object string, wri
 
 			// return errors if any during deletion
 			return reduceWriteQuorumErrs(ctx, dErrs, objectOpIgnoredErrs, writeQuorum)
-
-			disks, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, tmpObj, true, writeQuorum,
-			  	  []error{errFileNotFound, errFileAccessDenied})
+                        if (!globalNotransaction_write) {
+			  disks, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, tmpObj, true, writeQuorum,
+			    	    []error{errFileNotFound, errFileAccessDenied})
+                        }
 		} else {
-	            disks, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, tmpObj, true, writeQuorum,
-			      []error{errFileNotFound})
+                    if (!globalNotransaction_write) {
+	              disks, err = rename(ctx, xl.getDisks(), bucket, object, minioMetaTmpBucket, tmpObj, true, writeQuorum,
+		  	        []error{errFileNotFound})
+                    } else {
+                      disks = xl.getDisks()
+                    }
 		}
 		if err != nil {
 			return toObjectErr(err, bucket, object)
@@ -1081,16 +1086,21 @@ func (xl xlObjects) deleteObject(ctx context.Context, bucket, object string, wri
 		go func(index int, disk StorageAPI, isDir bool) {
 			defer wg.Done()
 			var e error
-			if isDir {
+                        if (!globalNotransaction_write) {
+			  if isDir {
 				// DeleteFile() simply tries to remove a directory
 				// and will succeed only if that directory is empty.
 				e = disk.DeleteFile(minioMetaTmpBucket, tmpObj)
-			} else {
+			  } else {
 				e = cleanupDir(ctx, disk, minioMetaTmpBucket, tmpObj)
-			}
-			if e != nil && e != errVolumeNotFound {
+			  }
+			  if e != nil && e != errVolumeNotFound {
 				dErrs[index] = e
-			}
+			  }
+                        } else {
+                          e = cleanupDir(ctx, disk, bucket, object)
+                         
+                        }
 		}(index, disk, isDir)
 	}
 

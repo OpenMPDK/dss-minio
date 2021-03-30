@@ -214,23 +214,33 @@ func (xl xlObjects) newMultipartUpload(ctx context.Context, bucket string, objec
 
 	uploadID := mustGetUUID()
 	uploadIDPath := xl.getUploadIDDir(bucket, object, uploadID)
-	tempUploadIDPath := uploadID
 
-	// Write updated `xl.json` to all disks.
-	disks, err := writeSameXLMetadata(ctx, xl.getDisks(), minioMetaTmpBucket, tempUploadIDPath, xlMeta, writeQuorum)
-	if err != nil {
+        if (!globalNotransaction_write) {
+	  tempUploadIDPath := uploadID
+
+	  // Write updated `xl.json` to all disks.
+	  disks, err := writeSameXLMetadata(ctx, xl.getDisks(), minioMetaTmpBucket, tempUploadIDPath, xlMeta, writeQuorum)
+	  if err != nil {
 		return "", toObjectErr(err, minioMetaTmpBucket, tempUploadIDPath)
-	}
-	// delete the tmp path later in case we fail to rename (ignore
-	// returned errors) - this will be a no-op in case of a rename
-	// success.
-	defer xl.deleteObject(ctx, minioMetaTmpBucket, tempUploadIDPath, writeQuorum, false)
+	  }
+	  // delete the tmp path later in case we fail to rename (ignore
+	  // returned errors) - this will be a no-op in case of a rename
+	  // success.
+	  defer xl.deleteObject(ctx, minioMetaTmpBucket, tempUploadIDPath, writeQuorum, false)
 
-	// Attempt to rename temp upload object to actual upload path object
-	_, rErr := rename(ctx, disks, minioMetaTmpBucket, tempUploadIDPath, minioMetaMultipartBucket, uploadIDPath, true, writeQuorum, nil)
-	if rErr != nil {
+	  // Attempt to rename temp upload object to actual upload path object
+	  _, rErr := rename(ctx, disks, minioMetaTmpBucket, tempUploadIDPath, minioMetaMultipartBucket, uploadIDPath, true, writeQuorum, nil)
+	  if rErr != nil {
 		return "", toObjectErr(rErr, minioMetaMultipartBucket, uploadIDPath)
-	}
+	  }
+        } else {
+
+          _, err := writeSameXLMetadata(ctx, xl.getDisks(), minioMetaMultipartBucket, uploadIDPath, xlMeta, writeQuorum)
+          if err != nil {
+                return "", toObjectErr(err, minioMetaMultipartBucket, uploadIDPath)
+          }
+          
+        }
 
 	// Return success.
 	return uploadID, nil
@@ -300,16 +310,19 @@ func (xl xlObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID 
 	var errs []error
 	uploadIDPath := xl.getUploadIDDir(bucket, object, uploadID)
 	uploadIDLockPath := xl.getUploadIDLockPath(bucket, object, uploadID)
-
+        var preUploadIDLock RWLocker 
 	// pre-check upload id lock.
-	preUploadIDLock := xl.nsMutex.NewNSLock(minioMetaMultipartBucket, uploadIDLockPath)
-	if err := preUploadIDLock.GetRLock(globalOperationTimeout); err != nil {
+        if (!globalNolock_write) {
+	  preUploadIDLock = xl.nsMutex.NewNSLock(minioMetaMultipartBucket, uploadIDLockPath)
+	  if err := preUploadIDLock.GetRLock(globalOperationTimeout); err != nil {
 		return pi, err
-	}
-
+	  }
+        }
 	// Validates if upload ID exists.
 	if !xl.isUploadIDExists(ctx, bucket, object, uploadID) {
-		preUploadIDLock.RUnlock()
+                if (!globalNolock_write) {
+		  preUploadIDLock.RUnlock()
+                }
 		return pi, InvalidUploadID{UploadID: uploadID}
 	}
 
@@ -320,16 +333,23 @@ func (xl xlObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID 
 	// get Quorum for this object
 	_, writeQuorum, err := objectQuorumFromMeta(ctx, xl, partsMetadata, errs)
 	if err != nil {
-		preUploadIDLock.RUnlock()
+                if (!globalNolock_write) {
+		  preUploadIDLock.RUnlock()
+                }
 		return pi, toObjectErr(err, bucket, object)
 	}
 
 	reducedErr := reduceWriteQuorumErrs(ctx, errs, objectOpIgnoredErrs, writeQuorum)
 	if reducedErr == errXLWriteQuorum {
-		preUploadIDLock.RUnlock()
+                if (!globalNolock_write) {
+		  preUploadIDLock.RUnlock()
+                }
 		return pi, toObjectErr(reducedErr, bucket, object)
 	}
-	preUploadIDLock.RUnlock()
+
+        if (!globalNolock_write) {
+	  preUploadIDLock.RUnlock()
+        }
 
 	// List all online disks.
 	onlineDisks, modTime := listOnlineDisks(xl.getDisks(), partsMetadata, errs)
@@ -348,9 +368,12 @@ func (xl xlObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID 
 	partSuffix := fmt.Sprintf("part.%d", partID)
 	tmpPart := mustGetUUID()
 	tmpPartPath := path.Join(tmpPart, partSuffix)
+        partPath := path.Join(uploadIDPath, partSuffix)
 
-	// Delete the temporary object part. If PutObjectPart succeeds there would be nothing to delete.
-	defer xl.deleteObject(ctx, minioMetaTmpBucket, tmpPart, writeQuorum, false)
+        if (!globalNotransaction_write) {
+	  // Delete the temporary object part. If PutObjectPart succeeds there would be nothing to delete.
+	  defer xl.deleteObject(ctx, minioMetaTmpBucket, tmpPart, writeQuorum, false)
+        }
 
 	erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
 	if err != nil {
@@ -378,7 +401,11 @@ func (xl xlObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID 
 		if disk == nil {
 			continue
 		}
-		writers[i] = newBitrotWriter(disk, minioMetaTmpBucket, tmpPartPath, erasure.ShardFileSize(data.Size()), DefaultBitrotAlgorithm, erasure.ShardSize())
+                if (!globalNotransaction_write) {
+		  writers[i] = newBitrotWriter(disk, minioMetaTmpBucket, tmpPartPath, erasure.ShardFileSize(data.Size()), DefaultBitrotAlgorithm, erasure.ShardSize())
+                } else {
+		  writers[i] = newBitrotWriter(disk, minioMetaMultipartBucket, partPath, erasure.ShardFileSize(data.Size()), DefaultBitrotAlgorithm, erasure.ShardSize())
+                }
 	}
 
 	n, err := erasure.Encode(ctx, data, writers, buffer, erasure.dataBlocks+1)
@@ -412,12 +439,13 @@ func (xl xlObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID 
 	}
 
 	// Rename temporary part file to its final location.
-	partPath := path.Join(uploadIDPath, partSuffix)
-	onlineDisks, err = rename(ctx, onlineDisks, minioMetaTmpBucket, tmpPartPath, minioMetaMultipartBucket, partPath, false, writeQuorum, nil)
-	if err != nil {
+	//partPath := path.Join(uploadIDPath, partSuffix)
+        if (!globalNotransaction_write) {
+	  onlineDisks, err = rename(ctx, onlineDisks, minioMetaTmpBucket, tmpPartPath, minioMetaMultipartBucket, partPath, false, writeQuorum, nil)
+	  if err != nil {
 		return pi, toObjectErr(err, minioMetaMultipartBucket, partPath)
-	}
-
+	  }
+        }
 	// Read metadata again because it might be updated with parallel upload of another part.
 	partsMetadata, errs = readAllXLMetadata(ctx, onlineDisks, minioMetaMultipartBucket, uploadIDPath)
 	reducedErr = reduceWriteQuorumErrs(ctx, errs, objectOpIgnoredErrs, writeQuorum)
@@ -452,17 +480,22 @@ func (xl xlObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID 
 	}
 
 	// Write all the checksum metadata.
-	newUUID := mustGetUUID()
-	tempXLMetaPath := newUUID
-
-	// Writes a unique `xl.json` each disk carrying new checksum related information.
-	if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempXLMetaPath, partsMetadata, writeQuorum); err != nil {
+        if (!globalNotransaction_write) {
+	  newUUID := mustGetUUID()
+	  tempXLMetaPath := newUUID
+	  // Writes a unique `xl.json` each disk carrying new checksum related information.
+	  if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempXLMetaPath, partsMetadata, writeQuorum); err != nil {
 		return pi, toObjectErr(err, minioMetaTmpBucket, tempXLMetaPath)
-	}
+	  }
 
-	if _, err = commitXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempXLMetaPath, minioMetaMultipartBucket, uploadIDPath, writeQuorum); err != nil {
+	  if _, err = commitXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempXLMetaPath, minioMetaMultipartBucket, uploadIDPath, writeQuorum); err != nil {
 		return pi, toObjectErr(err, minioMetaMultipartBucket, uploadIDPath)
-	}
+	  }
+        } else {
+          if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaMultipartBucket, uploadIDPath, partsMetadata, writeQuorum); err != nil {
+                return pi, toObjectErr(err, minioMetaMultipartBucket, uploadIDPath)
+          }          
+        }
 
 	fi, err := xl.statPart(ctx, bucket, object, uploadID, partSuffix)
 	if err != nil {
@@ -596,11 +629,13 @@ func (xl xlObjects) CompleteMultipartUpload(ctx context.Context, bucket string, 
 		return oi, err
 	}
 	// Hold write lock on the object.
-	destLock := xl.nsMutex.NewNSLock(bucket, object)
-	if err := destLock.GetLock(globalObjectTimeout); err != nil {
+        if (!globalNolock_write) {
+	  destLock := xl.nsMutex.NewNSLock(bucket, object)
+	  if err := destLock.GetLock(globalObjectTimeout); err != nil {
 		return oi, err
-	}
-	defer destLock.Unlock()
+	  }
+	  defer destLock.Unlock()
+        }
 
 	uploadIDPath := xl.getUploadIDDir(bucket, object, uploadID)
 	uploadIDLockPath := xl.getUploadIDLockPath(bucket, object, uploadID)
@@ -611,11 +646,13 @@ func (xl xlObjects) CompleteMultipartUpload(ctx context.Context, bucket string, 
 	//
 	// 2) no one does a parallel complete-multipart-upload on this
 	// multipart upload
-	uploadIDLock := xl.nsMutex.NewNSLock(minioMetaMultipartBucket, uploadIDLockPath)
-	if err := uploadIDLock.GetLock(globalOperationTimeout); err != nil {
+        if (!globalNolock_write) {
+	  uploadIDLock := xl.nsMutex.NewNSLock(minioMetaMultipartBucket, uploadIDLockPath)
+	  if err := uploadIDLock.GetLock(globalOperationTimeout); err != nil {
 		return oi, err
-	}
-	defer uploadIDLock.Unlock()
+	  }
+	  defer uploadIDLock.Unlock()
+        }
 
 	if !xl.isUploadIDExists(ctx, bucket, object, uploadID) {
 		return oi, InvalidUploadID{UploadID: uploadID}
@@ -738,17 +775,24 @@ func (xl xlObjects) CompleteMultipartUpload(ctx context.Context, bucket string, 
 		partsMetadata[index].Meta = xlMeta.Meta
 		partsMetadata[index].Parts = xlMeta.Parts
 	}
-
-	// Write unique `xl.json` for each disk.
-	if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempUploadIDPath, partsMetadata, writeQuorum); err != nil {
+        
+        if (!globalNotransaction_write) {
+	  // Write unique `xl.json` for each disk.
+	  if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempUploadIDPath, partsMetadata, writeQuorum); err != nil {
 		return oi, toObjectErr(err, minioMetaTmpBucket, tempUploadIDPath)
-	}
+	  }
 
-	var rErr error
-	onlineDisks, rErr = commitXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempUploadIDPath, minioMetaMultipartBucket, uploadIDPath, writeQuorum)
-	if rErr != nil {
+	  var rErr error
+	  onlineDisks, rErr = commitXLMetadata(ctx, onlineDisks, minioMetaTmpBucket, tempUploadIDPath, minioMetaMultipartBucket, uploadIDPath, writeQuorum)
+	  if rErr != nil {
 		return oi, toObjectErr(rErr, minioMetaMultipartBucket, uploadIDPath)
-	}
+	  }
+        } else {
+          if onlineDisks, err = writeUniqueXLMetadata(ctx, onlineDisks, minioMetaMultipartBucket, uploadIDPath, partsMetadata, writeQuorum); err != nil {
+                return oi, toObjectErr(err, minioMetaTmpBucket, tempUploadIDPath)
+          }
+          
+        }
 
 	if xl.isObject(bucket, object) {
 		// Deny if WORM is enabled

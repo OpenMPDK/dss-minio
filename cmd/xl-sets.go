@@ -476,6 +476,18 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           globalOptimizedMetaReader = false
         }
 
+        globalMetaOptNoStat = false
+        if os.Getenv("MINIO_DISABLE_META_STAT") != "" {
+          fmt.Println("### Setting up optimized meta disabling stat.. ###")
+          globalMetaOptNoStat = true
+        }
+
+        globalNoEC = false
+        if os.Getenv("MINIO_DISABLE_EC") != "" {
+          fmt.Println("### Setting up Minio without EC.. ###")
+          globalNoEC = true
+        }
+
 
         globalDummy_read = -1
        
