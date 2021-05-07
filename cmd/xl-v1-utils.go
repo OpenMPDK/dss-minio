@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
         "fmt"
+        //"runtime/debug"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/tidwall/gjson"
 )
@@ -329,6 +330,7 @@ func readXLMeta(ctx context.Context, disk StorageAPI, bucket string, object stri
 // Reads all `xl.json` metadata as a xlMetaV1 slice.
 // Returns error slice indicating the failed metadata reads.
 func readAllXLMetadata(ctx context.Context, disks []StorageAPI, bucket, object string) ([]xlMetaV1, []error) {
+        //debug.PrintStack()
 	errs := make([]error, len(disks))
 	metadataArray := make([]xlMetaV1, len(disks))
 	var wg = &sync.WaitGroup{}

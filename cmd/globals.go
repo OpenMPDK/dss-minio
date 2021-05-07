@@ -166,6 +166,7 @@ var (
         globalNkvShared bool 
         globalMinio_on_kv bool 
         globalDummy_read int64
+        globalMaxKVObject int64
         globalVerifyChecksum bool 
         globalSC_read bool 
         globalNolock_read bool 

@@ -1410,3 +1410,8 @@ func (s *posix) UpdateStats() error {
   return nil
 }
 
+func (s *posix) ReadAndCopy(volume string, filePath string, writer io.Writer) (err error) {
+
+  return nil
+}
+

@@ -20,6 +20,7 @@ import (
 	"context"
 	"path"
 	"sync"
+        "hash/crc32"
 )
 
 // getLoadBalancedDisks - fetches load balanced (sufficiently randomized) disk slice.
@@ -53,6 +54,18 @@ func (xl xlObjects) parentDirIsObject(ctx context.Context, bucket, parent string
 // isObject - returns `true` if the prefix is an object i.e if
 // `xl.json` exists at the leaf, false otherwise.
 func (xl xlObjects) isObject(bucket, prefix string) (ok bool) {
+
+        if (globalNoEC) {        
+          disks := xl.getDisks()
+          keyCrc := crc32.Checksum([]byte(prefix), crc32.IEEETable)
+          index := int(keyCrc % uint32(len(disks)))
+          fi, err := disks[index].StatFile(bucket, path.Join(prefix, xlMetaJSONFile))
+          if (err != nil || fi.Size == 0) {
+            return false
+          } 
+          return true
+        }
+
 	var errs = make([]error, len(xl.getDisks()))
 	var wg sync.WaitGroup
 	for index, disk := range xl.getDisks() {

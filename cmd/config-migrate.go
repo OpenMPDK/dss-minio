@@ -2419,7 +2419,9 @@ func migrateConfigToMinioSys(objAPI ObjectLayer) (err error) {
 
 	// Verify if config was already available in .minio.sys in which case, nothing more to be done.
 	if err = checkConfig(context.Background(), objAPI, configFile); err != errConfigNotFound {
-                fmt.Println("### In migrateConfigToMinioSys, Error:", configFile, err)
+                if (err != nil) {
+                  fmt.Println("### In migrateConfigToMinioSys, Error:", configFile, err)
+                }
 		return err
 	}
 	defer func() {

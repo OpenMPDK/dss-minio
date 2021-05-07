@@ -90,6 +90,7 @@ func newDsyncNodes(endpoints EndpointList) (clnts []dsync.NetLocker, myNode int)
                           fmt.Println("Unable to parse Lock RPC Host", endpoint.Host)
                         }
 			logger.FatalIf(err, "Unable to parse Lock RPC Host")
+                        fmt.Println("### Setting up RPC for host, port :: ", host.Name, host.Port) 
 			locker, err = NewLockRPCClient(host)
 			logger.FatalIf(err, "Unable to initialize Lock RPC Client")
 		}

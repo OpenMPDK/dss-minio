@@ -57,6 +57,7 @@ type StorageAPI interface {
 
 	// Read all.
 	ReadAll(volume string, path string) (buf []byte, err error)
+	ReadAndCopy(volume string, path string, writer io.Writer) (err error)
 }
 
 // storageReader is an io.Reader view of a disk

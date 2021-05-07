@@ -54,6 +54,7 @@ func (b *streamingBitrotWriter) Write(p []byte) (int, error) {
 	  b.h.Reset()
 	  b.h.Write(p)
 	  hashBytes := b.h.Sum(nil)
+          //fmt.Println("### Check-Sum Write ::", len(hashBytes))
 	  n, err := b.iow.Write(hashBytes)
 	  if n != len(hashBytes) {
 		logger.LogIf(context.Background(), err)
@@ -135,8 +136,8 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		// For the first ReadAt() call we need to open the stream for reading.
 		b.currOffset = offset
 		streamOffset := (offset/b.shardSize)*int64(b.h.Size()) + offset
-                //fmt.Println("### Calling from streamingBitrotReader->ReadAt, volume, filePath, path, offset, len ::", 
-                             //b.volume, b.filePath, b.disk.String(), streamOffset, b.tillOffset-streamOffset)
+                /*fmt.Println("### Calling from streamingBitrotReader->ReadAt, volume, filePath, path, offset, len ::", 
+                             b.volume, b.filePath, b.disk.String(), streamOffset, b.tillOffset-streamOffset)*/
 		b.rc, err = b.disk.ReadFileStream(b.volume, b.filePath, streamOffset, b.tillOffset-streamOffset)
 		if ((b.rc == nil) || (err != nil)) {
 			logger.LogIf(context.Background(), err)
@@ -149,29 +150,34 @@ func (b *streamingBitrotReader) ReadAt(buf []byte, offset int64) (int, error) {
 		return 0, errUnexpected
 	}
 	//b.h.Reset()
+        var h_bytes_read int = 0
+        var d_bytes_read int = 0
         //if (!globalZeroCopyReader || len(buf) <= 8192) {
         if (!globalZeroCopyReader) {
-	  _, err = io.ReadFull(b.rc, b.hashBytes)
+	  h_bytes_read, err = io.ReadFull(b.rc, b.hashBytes)
 	  if err != nil {
 		logger.LogIf(context.Background(), err)
-                fmt.Println("!!! Read failed during hash read, err = ", err)
+                fmt.Println("!!! Read failed during hash read, err = ", err, h_bytes_read)
 		return 0, err
 	  }
         }
-	_, err = io.ReadFull(b.rc, buf)
+	d_bytes_read, err = io.ReadFull(b.rc, buf)
 	if err != nil {
 		logger.LogIf(context.Background(), err)
-                fmt.Println("!!! Read failed during data read, err = ", err)
+                fmt.Println("!!! Read failed during data read, err = ", err, d_bytes_read)
 		return 0, err
 	}
+        data_length := b.tillOffset - int64 (b.h.Size())
+        //fmt.Println("###### ReadAt, Total bytes read ::", d_bytes_read, h_bytes_read, b.tillOffset, len(buf), data_length, b.disk.String())
         if (globalDummy_read == 0 && globalVerifyChecksum && !globalZeroCopyReader) {
-          //fmt.Println("### Doing checksum verify..", b.volume, b.filePath, b.disk.String())
+          //fmt.Println("### Doing checksum verify..", b.volume, b.filePath, data_length, b.disk.String())
           b.h.Reset()
-	  b.h.Write(buf)
+	  b.h.Write(buf[:data_length])
 
 	  if (!bytes.Equal(b.h.Sum(nil), b.hashBytes)) {
 		err = hashMismatchError{hex.EncodeToString(b.hashBytes), hex.EncodeToString(b.h.Sum(nil))}
 		logger.LogIf(context.Background(), err)
+                fmt.Println("!!! Read failed, err = ", err, b.disk.String())
 		return 0, err
 	  }
         }

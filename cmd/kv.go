@@ -463,12 +463,12 @@ var kvValuePool = &kvValuePoolType{
  }
 
 
-//var kvValuePool = sync.Pool{
-//	New: func() interface{} {
-//		b := make([]byte, kvMaxValueSize)
-//		return &b
-//	},
-//}
+var kvValuePoolNoEC = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, globalMaxKVObject)
+		return &b
+	},
+}
 
 var kvValuePoolMeta = sync.Pool{
         New: func() interface{} {
@@ -477,12 +477,12 @@ var kvValuePoolMeta = sync.Pool{
         },
 }
 
-var kvValuePoolList = sync.Pool{
+/*var kvValuePoolList = sync.Pool{
         New: func() interface{} {
                 b := make([]byte, 131072)
                 return &b
         },
-}
+}*/
 
 const kvKeyLength = 1024
 
@@ -656,7 +656,14 @@ func (k *KV) Put(keyStr string, value []byte) error {
 		kvMu.Lock()
 		defer kvMu.Unlock()
 	}
-	if len(value) > kvMaxValueSize {
+        max_supported_size := int (globalMaxKVObject)
+        size := len(value)
+
+        if (!globalNoEC || (size > int (globalMaxKVObject))) {
+          max_supported_size = kvMaxValueSize
+        }
+	if len(value) > max_supported_size {
+                fmt.Println("##### invalid value length during PUT", keyStr, len(value), max_supported_size)
 		return errValueTooLong
 	}
 	key := []byte(keyStr)
@@ -745,6 +752,18 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
                 return nil, errKeyLengthBig
 		//os.Exit(0)
 	}
+
+        max_supported_size := int (globalMaxKVObject)
+        size := len(value)
+
+        if (!globalNoEC || (size > int (globalMaxKVObject))) {
+          max_supported_size = kvMaxValueSize
+        }
+        if len(value) > max_supported_size {
+                fmt.Println("##### invalid value length during GET", keyStr, len(value), max_supported_size)
+                return nil, errValueTooLong
+        }
+
 	var actualLength int
 
 	var hashSum *kvHashSum
@@ -767,7 +786,7 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 			cstatus := C.minio_nkv_get(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), unsafe.Pointer(&value[0]), C.int(len(value)), &actualLengthCint)
 			status = int(cstatus)
 			actualLength = int(actualLengthCint)
-                        //fmt.Println("##### GET returned, key, length = ", keyStr, actualLength, k.path)
+                        //fmt.Println("##### GET returned, key, length = ", keyStr, len(value), actualLength, k.path)
 		} else {
 			ch := make(chan asyncKVLoopResponse, 1)
 			var response asyncKVLoopResponse

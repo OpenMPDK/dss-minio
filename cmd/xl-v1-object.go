@@ -152,6 +152,7 @@ func (xl xlObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBuc
 func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, rs *HTTPRangeSpec, h http.Header, lockType LockType, opts ObjectOptions) (gr *GetObjectReader, err error) {
 	var nsUnlocker = func() {}
         //debug.PrintStack()
+        //fmt.Println("@@@@ GetObjectNInfo called ::", bucket, object );
 	// Acquire lock
 	if lockType != noLock {
 		lock := xl.nsMutex.NewNSLock(bucket, object)
@@ -229,6 +230,7 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 // length indicates the total length of the object.
 func (xl xlObjects) GetObject(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, etag string, opts ObjectOptions) error {
 	// Lock the object before reading.
+        //fmt.Println("!!!! GetObject called ::", bucket, object );
 	objectLock := xl.nsMutex.NewNSLock(bucket, object)
 	if err := objectLock.GetRLock(globalObjectTimeout); err != nil {
 		return err
@@ -265,48 +267,50 @@ func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, 
 
         // List all online disks.
         onlineDisks, _ := listOnlineDisks(xl.getDisks(), metaArr, errs)
-
-        // Reorder online disks based on erasure distribution order.
-        onlineDisks = shuffleDisks(onlineDisks, xlMeta.Erasure.Distribution)
-        // Reorder parts metadata based on erasure distribution order.
-        metaArr = shufflePartsMetadata(metaArr, xlMeta.Erasure.Distribution)
-
         // For negative length read everything.
         if length < 0 {
-                length = xlMeta.Stat.Size - startOffset
+              length = xlMeta.Stat.Size - startOffset
         }
 
         // Reply back invalid range if the input offset and length fall out of range.
         if startOffset > xlMeta.Stat.Size || startOffset+length > xlMeta.Stat.Size {
-                logger.LogIf(ctx, InvalidRange{startOffset, length, xlMeta.Stat.Size})
-                return InvalidRange{startOffset, length, xlMeta.Stat.Size}
+              logger.LogIf(ctx, InvalidRange{startOffset, length, xlMeta.Stat.Size})
+              return InvalidRange{startOffset, length, xlMeta.Stat.Size}
         }
 
-        // Get start part index and offset.
-        partIndex, partOffset, err := xlMeta.ObjectToPartOffset(ctx, startOffset)
-        if err != nil {
-                return InvalidRange{startOffset, length, xlMeta.Stat.Size}
-        }
 
-        // Calculate endOffset according to length
-        endOffset := startOffset
-        if length > 0 {
+        if (!globalNoEC || (length > globalMaxKVObject)) {
+
+          // Reorder online disks based on erasure distribution order.
+          onlineDisks = shuffleDisks(onlineDisks, xlMeta.Erasure.Distribution)
+          // Reorder parts metadata based on erasure distribution order.
+          metaArr = shufflePartsMetadata(metaArr, xlMeta.Erasure.Distribution)
+
+          // Get start part index and offset.
+          partIndex, partOffset, err := xlMeta.ObjectToPartOffset(ctx, startOffset)
+          if err != nil {
+                return InvalidRange{startOffset, length, xlMeta.Stat.Size}
+          }
+
+          // Calculate endOffset according to length
+          endOffset := startOffset
+          if length > 0 {
                 endOffset += length - 1
-        }
+          }
 
-        // Get last part index to read given length.
-        lastPartIndex, _, err := xlMeta.ObjectToPartOffset(ctx, endOffset)
-        if err != nil {
+          // Get last part index to read given length.
+          lastPartIndex, _, err := xlMeta.ObjectToPartOffset(ctx, endOffset)
+          if err != nil {
                 return InvalidRange{startOffset, length, xlMeta.Stat.Size}
-        }
+          }
 
-        var totalBytesRead int64
-        //fmt.Println("### Creating EC, data_blocks, parity_blocks, block_size = ", xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
-        erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
-        if err != nil {
+          var totalBytesRead int64
+          //fmt.Println("### Creating EC, data_blocks, parity_blocks, block_size = ", xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
+          erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
+          if err != nil {
                 return toObjectErr(err, bucket, object)
-        }
-        for ; partIndex <= lastPartIndex; partIndex++ {
+          }
+          for ; partIndex <= lastPartIndex; partIndex++ {
                 if length == totalBytesRead {
                         break
                 }
@@ -350,8 +354,48 @@ func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, 
                 // partOffset will be valid only for the first part, hence reset it to 0 for
                 // the remaining parts.
                 partOffset = 0
-        } // End of read all parts loop.
+          } // End of read all parts loop.
 
+        } else {
+          
+          keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+          index := int(keyCrc % uint32(len(onlineDisks)))
+          disk := onlineDisks[index]
+          //fmt.Println(" ### Non EC Read :: ", index, onlineDisks, disk)
+          /*objBuf, err := disk.ReadAll(bucket, object)
+          if err != nil  {
+                if err != errFileNotFound && err != errVolumeNotFound {
+                        logger.GetReqInfo(ctx).AppendTags("disk", disk.String())
+                        logger.LogIf(ctx, err)
+                }
+                fmt.Println("### No EC GET error = ", err, bucket, object)
+                return toObjectErr(err, bucket, object)
+          }
+          if len(objBuf) == 0 {
+                err = errFileNotFound
+                fmt.Println("### No EC zero legth GET error = ", err)
+                return toObjectErr(err, bucket, object)        
+          }
+          _, err = io.Copy(writer, bytes.NewReader(objBuf))
+          if err != nil {
+            // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
+            if err != io.ErrClosedPipe {
+              logger.LogIf(ctx, err)
+            }
+            return toObjectErr(err, bucket, object) 
+          }*/
+
+          err := disk.ReadAndCopy(bucket, object, writer)
+          if err != nil {
+            // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
+            if err != io.ErrClosedPipe {
+              logger.LogIf(ctx, err)
+            }
+
+            return toObjectErr(err, bucket, object)
+          } 
+
+        }
         // Return success.
         return nil
 }
@@ -383,71 +427,111 @@ func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startO
 		return toObjectErr(err, bucket, object)
 	}
 
-	// Read metadata associated with the object from all disks.
-	metaArr, errs := readAllXLMetadata(ctx, xl.getDisks(), bucket, object)
+        var metaArr []xlMetaV1
+        var xlMeta xlMetaV1
+        var errs []error
+        var err error
+        var readQuorum int
+        
+        if (!globalOptimizedMetaReader) {
+	  // Read metadata associated with the object from all disks.
+	  metaArr, errs = readAllXLMetadata(ctx, xl.getDisks(), bucket, object)
 
-	// get Quorum for this object
-	readQuorum, _, err := objectQuorumFromMeta(ctx, xl, metaArr, errs)
-	if err != nil {
+	  // get Quorum for this object
+	  readQuorum, _, err := objectQuorumFromMeta(ctx, xl, metaArr, errs)
+	  if err != nil {
 		return toObjectErr(err, bucket, object)
-	}
+	  }
 
-	if reducedErr := reduceReadQuorumErrs(ctx, errs, objectOpIgnoredErrs, readQuorum); reducedErr != nil {
+	  if reducedErr := reduceReadQuorumErrs(ctx, errs, objectOpIgnoredErrs, readQuorum); reducedErr != nil {
 		return toObjectErr(reducedErr, bucket, object)
-	}
+	  }
+
+        } else {
+          disks := xl.getDisks()
+          keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+          index := int(keyCrc % uint32(len(disks)))
+          //fmt.Println("## Index for getting meta = ", index, disks[index])
+          xlMeta, err = readXLMeta(ctx, disks[index], bucket, object)
+          if err != nil {
+                return toObjectErr(err, bucket, object)
+          }
+
+          errs = make([]error, len(disks))
+          if err != nil {
+            errs[index] = err
+          }
+          metaArr = make([]xlMetaV1, len(disks))
+          for index, disk := range disks {
+            if disk == nil {
+              errs[index] = errDiskNotFound
+              continue
+            }
+            metaArr[index] = xlMeta
+          }
+
+        }
 
 	// List all online disks.
 	onlineDisks, modTime := listOnlineDisks(xl.getDisks(), metaArr, errs)
+        if length < 0 {
+          length = xlMeta.Stat.Size - startOffset
+        }
+        if startOffset > xlMeta.Stat.Size || startOffset+length > xlMeta.Stat.Size {
+            logger.LogIf(ctx, InvalidRange{startOffset, length, xlMeta.Stat.Size})
+            return InvalidRange{startOffset, length, xlMeta.Stat.Size}
+        }
 
-	// Pick latest valid metadata.
-	xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
-	if err != nil {
-		return err
-	}
+        if (!globalNoEC || (length > globalMaxKVObject)) {
 
-	// Reorder online disks based on erasure distribution order.
-	onlineDisks = shuffleDisks(onlineDisks, xlMeta.Erasure.Distribution)
+          // Pick latest valid metadata.
+          xlMeta, err = pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
+          if err != nil {
+                return err
+          }
+	  // Reorder online disks based on erasure distribution order.
+	  onlineDisks = shuffleDisks(onlineDisks, xlMeta.Erasure.Distribution)
 
-	// Reorder parts metadata based on erasure distribution order.
-	metaArr = shufflePartsMetadata(metaArr, xlMeta.Erasure.Distribution)
+	  // Reorder parts metadata based on erasure distribution order.
+	  metaArr = shufflePartsMetadata(metaArr, xlMeta.Erasure.Distribution)
 
-	// For negative length read everything.
-	if length < 0 {
+	  // For negative length read everything.
+	  if length < 0 {
 		length = xlMeta.Stat.Size - startOffset
-	}
+	  }
 
-	// Reply back invalid range if the input offset and length fall out of range.
-	if startOffset > xlMeta.Stat.Size || startOffset+length > xlMeta.Stat.Size {
+	  // Reply back invalid range if the input offset and length fall out of range.
+	  if startOffset > xlMeta.Stat.Size || startOffset+length > xlMeta.Stat.Size {
 		logger.LogIf(ctx, InvalidRange{startOffset, length, xlMeta.Stat.Size})
 		return InvalidRange{startOffset, length, xlMeta.Stat.Size}
-	}
+	  }
 
-	// Get start part index and offset.
-	partIndex, partOffset, err := xlMeta.ObjectToPartOffset(ctx, startOffset)
-	if err != nil {
+	  // Get start part index and offset.
+	  partIndex, partOffset, err := xlMeta.ObjectToPartOffset(ctx, startOffset)
+	  if err != nil {
 		return InvalidRange{startOffset, length, xlMeta.Stat.Size}
-	}
+	  }
 
-	// Calculate endOffset according to length
-	endOffset := startOffset
-	if length > 0 {
+	  // Calculate endOffset according to length
+	  endOffset := startOffset
+	  if length > 0 {
 		endOffset += length - 1
-	}
+	  }
 
-	// Get last part index to read given length.
-	lastPartIndex, _, err := xlMeta.ObjectToPartOffset(ctx, endOffset)
-	if err != nil {
+	  // Get last part index to read given length.
+	  lastPartIndex, _, err := xlMeta.ObjectToPartOffset(ctx, endOffset)
+	  if err != nil {
 		return InvalidRange{startOffset, length, xlMeta.Stat.Size}
-	}
+	  }
 
-	var totalBytesRead int64
-        //fmt.Println("### Creating EC, data_blocks, parity_blocks, block_size = ", xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
-	erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
-	if err != nil {
+	  var totalBytesRead int64
+          //fmt.Println("### Creating EC, data_blocks, parity_blocks, block_size = ", xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
+	  erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
+	  if err != nil {
 		return toObjectErr(err, bucket, object)
-	}
+	  }
 
-	for ; partIndex <= lastPartIndex; partIndex++ {
+	  for ; partIndex <= lastPartIndex; partIndex++ {
 		if length == totalBytesRead {
 			break
 		}
@@ -490,8 +574,24 @@ func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startO
 		// partOffset will be valid only for the first part, hence reset it to 0 for
 		// the remaining parts.
 		partOffset = 0
-	} // End of read all parts loop.
+	  } // End of read all parts loop.
+        } else {
+          disks := xl.getDisks()
+          keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+          index := int(keyCrc % uint32(len(disks)))
+          disk := disks[index]
+          //fmt.Println(" ### getObject::Non EC Read :: ", index, onlineDisks, disks, disk, bucket, object)
+          err := disk.ReadAndCopy(bucket, object, writer)
+          if err != nil {
+            // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
+            if err != io.ErrClosedPipe {
+              logger.LogIf(ctx, err)
+            }
 
+            return toObjectErr(err, bucket, object)
+          }
+
+        }
 	// Return success.
 	return nil
 }
@@ -609,6 +709,10 @@ func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object str
             }
             metaArr[index] = xlMeta
           }
+          if err != nil {
+                return objInfo, nil, xlMeta, errs, err
+          }
+
           return xlMeta.ToObjectInfo(bucket, object), metaArr, xlMeta, errs, nil
         }
         
@@ -619,27 +723,53 @@ func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object str
 func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object string) (objInfo ObjectInfo, err error) {
 	disks := xl.getDisks()
 
-	// Read metadata associated with the object from all disks.
-	metaArr, errs := readAllXLMetadata(ctx, disks, bucket, object)
+        if (!globalOptimizedMetaReader) {
+	  // Read metadata associated with the object from all disks.
+	  metaArr, errs := readAllXLMetadata(ctx, disks, bucket, object)
 
-	readQuorum, _, err := objectQuorumFromMeta(ctx, xl, metaArr, errs)
-	if err != nil {
+	  readQuorum, _, err := objectQuorumFromMeta(ctx, xl, metaArr, errs)
+	  if err != nil {
 		return objInfo, err
-	}
+	  }
 
-	// List all the file commit ids from parts metadata.
-	modTimes := listObjectModtimes(metaArr, errs)
+	  // List all the file commit ids from parts metadata.
+	  modTimes := listObjectModtimes(metaArr, errs)
 
-	// Reduce list of UUIDs to a single common value.
-	modTime, _ := commonTime(modTimes)
+	  // Reduce list of UUIDs to a single common value.
+	  modTime, _ := commonTime(modTimes)
 
-	// Pick latest valid metadata.
-	xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
-	if err != nil {
+	  // Pick latest valid metadata.
+	  xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
+	  if err != nil {
 		return objInfo, err
-	}
+	  }
+        
+	  return xlMeta.ToObjectInfo(bucket, object), nil
+        } else {
 
-	return xlMeta.ToObjectInfo(bucket, object), nil
+          keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+          index := int(keyCrc % uint32(len(disks)))
+          //fmt.Println("## Index for getting meta = ", index, disks[index])
+          xlMeta, err := readXLMeta(ctx, disks[index], bucket, object)
+          errs := make([]error, len(disks))
+          if err != nil {
+            errs[index] = err
+          }
+          metaArr := make([]xlMetaV1, len(disks))
+          for index, disk := range disks {
+            if disk == nil {
+              errs[index] = errDiskNotFound
+              continue
+            }
+            metaArr[index] = xlMeta
+          }
+          if err != nil {
+               return objInfo, err 
+          }
+
+          return xlMeta.ToObjectInfo(bucket, object), nil
+        }
+
 }
 
 func undoRename(disks []StorageAPI, srcBucket, srcEntry, dstBucket, dstEntry string, isDir bool, errs []error) {
@@ -816,36 +946,40 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 	for index := range partsMetadata {
 		partsMetadata[index] = xlMeta
 	}
+        var onlineDisks []StorageAPI
+        var sizeWritten int64
 
-	// Order disks according to erasure distribution
-	onlineDisks := shuffleDisks(xl.getDisks(), partsMetadata[0].Erasure.Distribution)
+        if (!globalNoEC || (data.Size() > globalMaxKVObject)) {
 
-	// Total size of the written object
-	var sizeWritten int64
-	erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
-	if err != nil {
+	  // Order disks according to erasure distribution
+	  onlineDisks = shuffleDisks(xl.getDisks(), partsMetadata[0].Erasure.Distribution)
+
+	  // Total size of the written object
+	  //var sizeWritten int64
+	  erasure, err := NewErasure(ctx, xlMeta.Erasure.DataBlocks, xlMeta.Erasure.ParityBlocks, xlMeta.Erasure.BlockSize)
+	  if err != nil {
 		return ObjectInfo{}, toObjectErr(err, bucket, object)
-	}
+	  }
 
-	// Fetch buffer for I/O, returns from the pool if not allocates a new one and returns.
-	var buffer []byte
-	switch size := data.Size(); {
-	case size == 0:
+	  // Fetch buffer for I/O, returns from the pool if not allocates a new one and returns.
+	  var buffer []byte
+	  switch size := data.Size(); {
+	  case size == 0:
 		buffer = make([]byte, 1) // Allocate atleast a byte to reach EOF
-	case size == -1 || size >= blockSizeV1:
+	  case size == -1 || size >= blockSizeV1:
 		buffer = xl.bp.Get()
 		defer xl.bp.Put(buffer)
-	case size < blockSizeV1:
+	  case size < blockSizeV1:
 		// No need to allocate fully blockSizeV1 buffer if the incoming data is smaller.
 		buffer = make([]byte, size, 2*size)
-	}
+	  }
 
-	if len(buffer) > int(xlMeta.Erasure.BlockSize) {
+	  if len(buffer) > int(xlMeta.Erasure.BlockSize) {
 		buffer = buffer[:xlMeta.Erasure.BlockSize]
-	}
+	  }
 
-	// Read data and split into parts - similar to multipart mechanism
-	for partIdx := 1; ; partIdx++ {
+	  // Read data and split into parts - similar to multipart mechanism
+	  for partIdx := 1; ; partIdx++ {
 		// Compute part name
 		partName := "part." + strconv.Itoa(partIdx)
 		// Compute the path of current part
@@ -937,8 +1071,40 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 		if sizeWritten == data.Size() {
 			break
 		}
-	}
+	  }
+        } else {
+          var buffer []byte
+          switch size := data.Size(); {
+          case size == 0:
+                buffer = make([]byte, 1) // Allocate atleast a byte to reach EOF
+          case size == -1 || size >= blockSizeV1:
+                buffer = xl.bp.Get()
+                defer xl.bp.Put(buffer)
+          case size < blockSizeV1:
+                // No need to allocate fully blockSizeV1 buffer if the incoming data is smaller.
+                buffer = make([]byte, size, 2*size)
+          }
 
+          n, err := io.ReadFull(reader, buffer)
+          if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+            logger.LogIf(ctx, err)
+            return ObjectInfo{}, toObjectErr(err, bucket, object) 
+          }
+
+          disks := xl.getDisks()
+          keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+          index := int(keyCrc % uint32(len(disks)))
+          onlineDisks = make([]StorageAPI, 1)
+          onlineDisks[0] = disks[index]
+          //fmt.Println(" ### Non EC write :: ", n, index, onlineDisks, len(onlineDisks))
+          err = disks[index].WriteAll(bucket, object, buffer[:n])
+          if err != nil {
+            logger.LogIf(ctx, err) 
+            return ObjectInfo{}, toObjectErr(err, bucket, object)
+          }
+          sizeWritten = int64 (n)
+          writeQuorum = 1
+        }
 	// Save additional erasureMetadata.
 	modTime := UTCNow()
 
@@ -1139,13 +1305,26 @@ func (xl xlObjects) DeleteObject(ctx context.Context, bucket, object string) (er
 	if isObjectDir {
 		writeQuorum = len(xl.getDisks())/2 + 1
 	} else {
-		// Read metadata associated with the object from all disks.
-		partsMetadata, errs := readAllXLMetadata(ctx, xl.getDisks(), bucket, object)
-		// get Quorum for this object
-		_, writeQuorum, err = objectQuorumFromMeta(ctx, xl, partsMetadata, errs)
-		if err != nil {
+                if (!globalOptimizedMetaReader) {
+		  // Read metadata associated with the object from all disks.
+		  partsMetadata, errs := readAllXLMetadata(ctx, xl.getDisks(), bucket, object)
+		  // get Quorum for this object
+		  _, writeQuorum, err = objectQuorumFromMeta(ctx, xl, partsMetadata, errs)
+		  if err != nil {
 			return toObjectErr(err, bucket, object)
-		}
+		  }
+                } else {
+                  disks := xl.getDisks()
+                  keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+                  index := int(keyCrc % uint32(len(disks)))
+                  //fmt.Println("## Index for getting meta = ", index, disks[index])
+                  _, err := readXLMeta(ctx, disks[index], bucket, object)
+                  if err != nil {
+                        return toObjectErr(err, bucket, object)
+                  }
+
+
+                }
 	}
 
 	// Delete the object on all disks.

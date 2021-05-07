@@ -487,7 +487,17 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           fmt.Println("### Setting up Minio without EC.. ###")
           globalNoEC = true
         }
-
+        if v := os.Getenv("MINIO_KV_MAX_SIZE"); v != "" {
+          var err error
+          globalMaxKVObject, err = strconv.ParseInt(v, 10, 64)
+          if err != nil {
+            fmt.Printf("### Wrong value of MINIO_KV_MAX_SIZE = %s\n", v)
+            globalMaxKVObject = 1048576
+          }
+        } else {
+          globalMaxKVObject = 1048576
+        }
+        fmt.Println("### Max KV object size supported = ###", globalMaxKVObject)
 
         globalDummy_read = -1
        
@@ -842,7 +852,7 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
 			if disk == nil {
 				continue
 			}
-                        if (!globalMinio_on_kv) {
+                        if (!globalMinio_on_kv || globalNoEC) {
 			  wg.Add(1)
 			  go func(index int, disk StorageAPI) {
 				defer wg.Done()
@@ -857,7 +867,7 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
                           }
                         }
 		}
-                if (!globalMinio_on_kv) {
+                if (!globalMinio_on_kv || globalNoEC) {
 		  wg.Wait()
                 }
 
@@ -866,7 +876,7 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
 			var newEntries []string
 
 			for _, entry := range entries {
-                                if (!globalMinio_on_kv) {
+                                if (!globalMinio_on_kv || globalNoEC) {
 				  idx := sort.SearchStrings(mergedEntries, entry)
 				  // if entry is already present in mergedEntries don't add.
 				  if idx < len(mergedEntries) && mergedEntries[idx] == entry {
@@ -1051,6 +1061,7 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 		}
 		result.Objects = append(result.Objects, objInfo)
 	}
+        //fmt.Printf("@@@@@@@ ListObjects done:: bucket = %s, prefix = %s, delimiter = %s\n", bucket, prefix, delimiter, result)
 	return result, nil
 }
 

@@ -392,6 +392,12 @@ func (client *storageRESTClient) UpdateStats() error {
   return nil
 }
 
+func (client *storageRESTClient) ReadAndCopy(volume string, filePath string, writer io.Writer) (err error) {
+
+  return nil
+}
+
+
 
 // Gets peer storage server's instanceID - to be used with every REST call for validation.
 func (client *storageRESTClient) getInstanceID() (err error) {
