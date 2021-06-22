@@ -1238,33 +1238,39 @@ func (k *KVStorage) DeleteFile(volume string, path string) (err error) {
 		return err
 	}
 	nskey := pathJoin(volume, path)
-        //var bufp *[]byte = nil
-        bufp := kvValuePoolMeta.Get().(*[]byte)
-        defer kvValuePoolMeta.Put(bufp)
+        var bufp *[]byte = nil
+        //bufp := kvValuePoolMeta.Get().(*[]byte)
+        //defer kvValuePoolMeta.Put(bufp)
+        //fmt.Println("### DeleteFile = ", nskey)
+        var is_meta bool = true
 
+        if (globalMetaOptNoStat) {
+          if strings.HasSuffix(nskey, xlMetaJSONFile) || strings.HasSuffix(nskey, "part.1") ||  strings.Contains(nskey, ".minio.sys") {
 
-        /*if (globalMetaOptNoStat) {
-          if strings.HasSuffix(nskey, xlMetaJSONFile) ||  strings.Contains(nskey, ".minio.sys") {
-            bufp = kvValuePoolMeta.Get().(*[]byte)
-            defer kvValuePoolMeta.Put(bufp)
+            if (strings.HasSuffix(nskey, "part.1")) {
+              bufp = kvValuePool.Get().(*[]byte)
+              defer kvValuePool.Put(bufp)
 
+            } else {
+              bufp = kvValuePoolMeta.Get().(*[]byte)
+              defer kvValuePoolMeta.Put(bufp)
+            }
           } else {
-            bufp = kvValuePool.Get().(*[]byte)
-            defer kvValuePool.Put(bufp)
-
             nskey = k.DataKey(nskey)
+            is_meta = false
           }
-        }*/
-
+        }
         
-	_, entry, err := k.getKVNSEntry(nskey, *bufp)
-	if err != nil {
-	  nskey = k.DataKey(nskey)
-	} else {
-          if (len(entry.IDs) != 0) {
-	    for _, id := range entry.IDs {
-	      k.kv.Delete(k.DataKey(id))
-	    }
+        if (is_meta) {
+	  _, entry, err := k.getKVNSEntry(nskey, *bufp)
+	  if err != nil {
+	    nskey = k.DataKey(nskey)
+	  } else {
+            if (len(entry.IDs) != 0) {
+	      for _, id := range entry.IDs {
+	        k.kv.Delete(k.DataKey(id))
+	      }
+            }
           }
         }
         /*bufp := kvValuePoolMeta.Get().(*[]byte)

@@ -20,6 +20,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+        //"fmt"
 )
 
 // Tree walk result carries results of tree walking.
@@ -144,7 +145,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 			markerBase = markerSplit[1]
 		}
 	}
-
+        //fmt.Println("doTreeWalk begin = ", bucket, prefixDir, entryPrefixMatch, marker, markerDir)
 	entries, delayIsLeaf := listDir(bucket, prefixDir, entryPrefixMatch)
 	// When isleaf check is delayed, make sure that it is set correctly here.
 	if delayIsLeaf && isLeaf == nil {
@@ -167,6 +168,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 	if len(entries) == 0 {
 		return nil
 	}
+        //fmt.Println("doTreeWalk = ", bucket, prefixDir, entryPrefixMatch, marker, markerDir, idx, recursive, entries)
 
 	for i, entry := range entries {
 		var leaf, leafDir bool
@@ -183,6 +185,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 
 		if strings.HasSuffix(entry, slashSeparator) {
 			leafDir = isLeafDir(bucket, pathJoin(prefixDir, entry))
+                        //fmt.Println("doTreeWalk = ", bucket, pathJoin(prefixDir, entry), leafDir, leaf)
 		}
 
 		isDir := !leafDir && !leaf
@@ -225,7 +228,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 		case resultCh <- treeWalkResult{entry: pathJoin(prefixDir, entry), end: isEOF}:
 		}
 	}
-
+        //fmt.Println("doTreeWalk done")
 	// Everything is listed.
 	return nil
 }

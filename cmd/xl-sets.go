@@ -487,6 +487,12 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           fmt.Println("### Setting up Minio without EC.. ###")
           globalNoEC = true
         }
+        globalNoReadVerifyList = false
+        if os.Getenv("MINIO_LIST_NO_READ_VERIFY") != "" {
+          fmt.Println("### Setting up Minio not to verify list with read.. ###")
+          globalNoReadVerifyList = true
+        }
+
         if v := os.Getenv("MINIO_KV_MAX_SIZE"); v != "" {
           var err error
           globalMaxKVObject, err = strconv.ParseInt(v, 10, 64)
@@ -871,29 +877,40 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
 		  wg.Wait()
                 }
 
+                track_dup := make(map[string]bool)
 		// Find elements in entries which are not in mergedEntries
 		for _, entries := range diskEntries {
-			var newEntries []string
+			//var newEntries []string
 
 			for _, entry := range entries {
-                                if (!globalMinio_on_kv || globalNoEC) {
-				  idx := sort.SearchStrings(mergedEntries, entry)
+                                /*if (!globalMinio_on_kv || globalNoEC) {
+				  idx := sort.SearchStrings(newEntries, entry)
+                                  //fmt.Println("listDirInternal = ", entry, idx, newEntries)
 				  // if entry is already present in mergedEntries don't add.
-				  if idx < len(mergedEntries) && mergedEntries[idx] == entry {
+				  //if idx < len(mergedEntries) && mergedEntries[idx] == entry {
+                                        //fmt.Println("listDirInternal,duplicate = ", entry)
 					continue
 				  }
                                 }
 				newEntries = append(newEntries, entry)
+                                */
+                                if track_dup[entry] == true {
+                                  continue
+                                }
+                                mergedEntries = append(mergedEntries, entry)
+                                track_dup[entry] = true
+
 			}
 
-			if len(newEntries) > 0 {
+			/*if len(newEntries) > 0 {
 				// Merge the entries and sort it.
 				mergedEntries = append(mergedEntries, newEntries...)
                                 if (!globalMinio_on_kv) {
 				  sort.Strings(mergedEntries)
                                 }
-			}
+			}*/
 		}
+                //fmt.Println("listDirInternal = ", mergedEntries)
 
 		return mergedEntries
 	}
@@ -902,26 +919,33 @@ func listDirSetsFactory(ctx context.Context, isLeaf isLeafFunc, isLeafDir isLeaf
         //encountered := make(map[string]bool)
 	// listDir - lists all the entries at a given prefix and given entry in the prefix.
 	listDir := func(bucket, prefixDir, prefixEntry string) (mergedEntries []string, delayIsLeaf bool) {
-                //encountered := make(map[string]bool)
+                encountered := make(map[string]bool)
 		for _, set := range sets {
 			var newEntries []string
 			// Find elements in entries which are not in mergedEntries
 			for _, entry := range listDirInternal(bucket, prefixDir, prefixEntry, set.getLoadBalancedDisks()) {
-                                if (!globalNkvShared) {
+                                /*if (!globalNkvShared) {
 				  idx := sort.SearchStrings(mergedEntries, entry)
 				  // if entry is already present in mergedEntries don't add.
 				  if idx < len(mergedEntries) && mergedEntries[idx] == entry {
 					continue
 				  }
                                 } else {
-                                  /*if encountered[entry] == true {
+                                  if encountered[entry] == true {
                                     continue
-                                  }*/
+                                  }
                                 }
 				newEntries = append(newEntries, entry)
-                                /*if (globalMinio_on_kv) {
+                                if (globalMinio_on_kv) {
                                   encountered[entry] = true
                                 }*/
+
+                                if encountered[entry] == true {
+                                  continue
+                                }
+                                newEntries = append(newEntries, entry)
+                                encountered[entry] = true
+                                
 			}
 
 			if len(newEntries) > 0 {
@@ -953,6 +977,7 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 	}
 
 	var objInfos []ObjectInfo
+        var listMu sync.Mutex
 	var eof bool
 	var nextMarker string
 
@@ -960,7 +985,7 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 	if delimiter == slashSeparator {
 		recursive = false
 	}
-        //fmt.Printf("### ListObjects:: bucket = %s, prefix = %s, delimiter = %s\n", bucket, prefix, delimiter)
+        //fmt.Printf("### ListObjects:: bucket = %s, prefix = %s, delimiter = %s, recursive = %d\n", bucket, prefix, delimiter, recursive)
 	walkResultCh, endWalkCh := s.listPool.Release(listParams{bucket, recursive, marker, prefix})
 	if walkResultCh == nil {
 		endWalkCh = make(chan struct{})
@@ -997,7 +1022,8 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 		listDir := listDirSetsFactory(ctx, isLeaf, isLeafDir, s.sets...)
 		walkResultCh = startTreeWalk(ctx, bucket, prefix, marker, recursive, listDir, isLeaf, isLeafDir, endWalkCh)
 	}
-
+     
+        var wg = &sync.WaitGroup{}
 	for i := 0; i < maxKeys; {
 		walkResult, ok := <-walkResultCh
 		if !ok {
@@ -1021,10 +1047,43 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 			// 		break
 			// 	}
 			// }
-			objInfo.Name = walkResult.entry
-			objInfo.IsDir = true
+                        objInfo.Name = walkResult.entry
+                        objInfo.IsDir = true
+
+                        if (!globalNoReadVerifyList) {
+                          listMu.Lock()
+                          objInfos = append(objInfos, objInfo)
+                          listMu.Unlock()
+                        } else {
+                          objInfos = append(objInfos, objInfo)
+                        }
 		} else {
-			objInfo, err = s.getHashedSet(walkResult.entry).getObjectInfo(ctx, bucket, walkResult.entry)
+                        if (!globalNoReadVerifyList) {
+			  //objInfo, err = s.getHashedSet(walkResult.entry).getObjectInfo(ctx, bucket, walkResult.entry)
+                          err = nil
+                          var keyName = walkResult.entry
+                          wg.Add(1)
+                          //go func(keyName string, bucket string, ctx context.Context, listMu sync.Mutex, objInfos []ObjectInfo, s *xlSets) {
+                          go func(keyName string) {
+                            defer wg.Done()
+                            //fmt.Println("Calling Getinfo::", bucket, keyName)
+			    objInfo, err := s.getHashedSet(keyName).getObjectInfo(ctx, bucket, keyName)
+                            if err == nil {
+                              listMu.Lock()
+                              objInfos = append(objInfos, objInfo)
+                              nextMarker = objInfo.Name
+                              listMu.Unlock()
+                            } else {
+                              fmt.Println(" ## Error :: Getinfo::", bucket, keyName)
+                            }
+                          }(keyName)
+                          
+                        } else {
+                          err = nil
+                          objInfo.Name = walkResult.entry
+                          objInfos = append(objInfos, objInfo)
+                          nextMarker = objInfo.Name
+                        }
 		}
 		if err != nil {
 			// Ignore errFileNotFound as the object might have got
@@ -1038,14 +1097,20 @@ func (s *xlSets) ListObjects(ctx context.Context, bucket, prefix, marker, delimi
 			}
 			return result, toObjectErr(err, bucket, prefix)
 		}
-		nextMarker = objInfo.Name
-		objInfos = append(objInfos, objInfo)
+
+                //nextMarker = walkResult.entry
+		//objInfos = append(objInfos, objInfo)
 		i++
 		if walkResult.end {
 			eof = true
 			break
 		}
+                //fmt.Println("End of loop", nextMarker, i, maxKeys)
 	}
+        if (!globalNoReadVerifyList) {
+          wg.Wait()
+        }
+        //fmt.Println("Wait done::", nextMarker, len(objInfos))
 
 	params := listParams{bucket, recursive, nextMarker, prefix}
 	if !eof {

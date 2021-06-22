@@ -178,6 +178,7 @@ var (
         globalOptimizedMetaReader bool 
         globalMetaOptNoStat bool 
         globalNoEC bool 
+        globalNoReadVerifyList bool 
         globalECBlockSizeKB int64 
         globalInstanceHost string
         globalTotalGetQD uint64

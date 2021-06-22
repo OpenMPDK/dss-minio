@@ -1187,7 +1187,7 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 func (xl xlObjects) deleteObject(ctx context.Context, bucket, object string, writeQuorum int, isDir bool) error {
 	var disks []StorageAPI
 	var err error
-
+        //fmt.Println("### deleteObject = ", bucket, object, writeQuorum, isDir)
 	tmpObj := mustGetUUID()
 	if bucket == minioMetaTmpBucket {
 		tmpObj = object
@@ -1265,7 +1265,9 @@ func (xl xlObjects) deleteObject(ctx context.Context, bucket, object string, wri
 			  }
                         } else {
                           e = cleanupDir(ctx, disk, bucket, object)
-                         
+                          if (globalMetaOptNoStat) {
+                            disk.DeleteFile(bucket, path.Join(object, "part.1"))
+                          }                         
                         }
 		}(index, disk, isDir)
 	}
@@ -1282,7 +1284,7 @@ func (xl xlObjects) deleteObject(ctx context.Context, bucket, object string, wri
 // response to the client request.
 func (xl xlObjects) DeleteObject(ctx context.Context, bucket, object string) (err error) {
 	// Acquire a write lock before deleting the object.
-       
+        //fmt.Println("### DeleteObject = ", bucket, object) 
         if (!globalNolock_write) {
 	  objectLock := xl.nsMutex.NewNSLock(bucket, object)
 	  if perr := objectLock.GetLock(globalOperationTimeout); perr != nil {
@@ -1296,6 +1298,8 @@ func (xl xlObjects) DeleteObject(ctx context.Context, bucket, object string) (er
 	}
 
 	var writeQuorum int
+	var objLen int64
+
 	var isObjectDir = hasSuffix(object, slashSeparator)
 
 	if isObjectDir && !xl.isObjectDir(bucket, object) {
@@ -1305,7 +1309,7 @@ func (xl xlObjects) DeleteObject(ctx context.Context, bucket, object string) (er
 	if isObjectDir {
 		writeQuorum = len(xl.getDisks())/2 + 1
 	} else {
-                if (!globalOptimizedMetaReader) {
+                if (!globalOptimizedMetaReader && !globalNoEC) {
 		  // Read metadata associated with the object from all disks.
 		  partsMetadata, errs := readAllXLMetadata(ctx, xl.getDisks(), bucket, object)
 		  // get Quorum for this object
@@ -1313,16 +1317,21 @@ func (xl xlObjects) DeleteObject(ctx context.Context, bucket, object string) (er
 		  if err != nil {
 			return toObjectErr(err, bucket, object)
 		  }
+                  objLen = partsMetadata[0].Stat.Size
                 } else {
                   disks := xl.getDisks()
                   keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
                   index := int(keyCrc % uint32(len(disks)))
                   //fmt.Println("## Index for getting meta = ", index, disks[index])
-                  _, err := readXLMeta(ctx, disks[index], bucket, object)
+                  xlMeta, err := readXLMeta(ctx, disks[index], bucket, object)
                   if err != nil {
                         return toObjectErr(err, bucket, object)
                   }
-
+                  objLen = xlMeta.Stat.Size
+                  if (globalNoEC && (objLen <= globalMaxKVObject)) {
+                    err := disks[index].DeleteFile(bucket, object)
+                    logger.LogIf(ctx, err)
+                  }
 
                 }
 	}

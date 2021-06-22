@@ -127,8 +127,17 @@ func (xl xlObjects) isObjectDir(bucket, prefix string) (ok bool) {
 	}
 
 	wg.Wait()
+        if (globalNoEC) {
+          for _, err := range errs {
+            if (err == errVolumeNotEmpty) {
+              return false
+            }
+          }
+          return true
+        }
 
 	readQuorum := len(xl.getDisks()) / 2
 
 	return reduceReadQuorumErrs(context.Background(), errs, objectOpIgnoredErrs, readQuorum) == nil
+       
 }
