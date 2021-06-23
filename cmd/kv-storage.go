@@ -1241,7 +1241,6 @@ func (k *KVStorage) DeleteFile(volume string, path string) (err error) {
         var bufp *[]byte = nil
         //bufp := kvValuePoolMeta.Get().(*[]byte)
         //defer kvValuePoolMeta.Put(bufp)
-        //fmt.Println("### DeleteFile = ", nskey)
         var is_meta bool = true
 
         if (globalMetaOptNoStat) {
@@ -1250,19 +1249,22 @@ func (k *KVStorage) DeleteFile(volume string, path string) (err error) {
             if (strings.HasSuffix(nskey, "part.1")) {
               bufp = kvValuePool.Get().(*[]byte)
               defer kvValuePool.Put(bufp)
-
             } else {
               bufp = kvValuePoolMeta.Get().(*[]byte)
               defer kvValuePoolMeta.Put(bufp)
             }
+            
           } else {
             nskey = k.DataKey(nskey)
             is_meta = false
           }
+        } else {
+          bufp = kvValuePoolMeta.Get().(*[]byte)
+          defer kvValuePoolMeta.Put(bufp)
         }
-        
+
         if (is_meta) {
-	  _, entry, err := k.getKVNSEntry(nskey, *bufp)
+	  _,entry, err := k.getKVNSEntry(nskey, *bufp)
 	  if err != nil {
 	    nskey = k.DataKey(nskey)
 	  } else {
