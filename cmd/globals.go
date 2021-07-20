@@ -183,6 +183,9 @@ var (
         globalInstanceHost string
         globalTotalGetQD uint64
         globalTotalECReqQD uint64
+        globalTotalHeadObjQD uint64
+        globalTotalHeadIOCount uint64
+        globalTotalGetIOCount uint64
         globalIsStopping bool = false
 
 	// Global server's network statistics

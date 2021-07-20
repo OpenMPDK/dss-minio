@@ -388,6 +388,7 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
           //fmt.Println("Going through the SLOW path..!!")
           if (track_minio_stats) {
             atomic.AddUint64(&globalTotalGetQD, 1)
+            atomic.AddUint64(&globalTotalGetIOCount, 1)
           }
 	  gr, err_bl = getObjectNInfo(ctx, bucket, object, rs, r.Header, lock, opts)
 	  if err_bl != nil {
@@ -622,14 +623,26 @@ func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+        if (track_minio_stats) {
+          atomic.AddUint64(&globalTotalHeadObjQD, 1)
+          atomic.AddUint64(&globalTotalHeadIOCount, 1)
+        }
+
 	objInfo, err := getObjectInfo(ctx, bucket, object, opts)
 	if err != nil {
 		writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
+                if (track_minio_stats) {
+                  atomic.AddUint64(&globalTotalHeadObjQD, ^uint64(0))
+                }
+
 		return
 	}
 	if objectAPI.IsEncryptionSupported() {
 		if _, err = DecryptObjectInfo(&objInfo, r.Header); err != nil {
 			writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
+                        if (track_minio_stats) {
+                          atomic.AddUint64(&globalTotalHeadObjQD, ^uint64(0))
+                        }
 			return
 		}
 		objInfo.UserDefined = CleanMinioInternalMetadataKeys(objInfo.UserDefined)
@@ -645,6 +658,9 @@ func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Re
 				// Validate the SSE-C Key set in the header.
 				if _, err = crypto.SSEC.UnsealObjectKey(r.Header, objInfo.UserDefined, bucket, object); err != nil {
 					writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
+                                        if (track_minio_stats) {
+                                          atomic.AddUint64(&globalTotalHeadObjQD, ^uint64(0))
+                                        }
 					return
 				}
 				w.Header().Set(crypto.SSECAlgorithm, r.Header.Get(crypto.SSECAlgorithm))
@@ -655,12 +671,18 @@ func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Re
 
 	// Validate pre-conditions if any.
 	if checkPreconditions(ctx, w, r, objInfo) {
+                if (track_minio_stats) {
+                  atomic.AddUint64(&globalTotalHeadObjQD, ^uint64(0))
+                }
 		return
 	}
 
 	// Set standard object headers.
 	if err = setObjectHeaders(w, objInfo, rs); err != nil {
 		writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
+                if (track_minio_stats) {
+                  atomic.AddUint64(&globalTotalHeadObjQD, ^uint64(0))
+                }
 		return
 	}
 
@@ -679,6 +701,9 @@ func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		host, port = "", ""
 	}
+        if (track_minio_stats) {
+          atomic.AddUint64(&globalTotalHeadObjQD, ^uint64(0))
+        }
 	// Notify object accessed via a HEAD request.
 	sendEvent(eventArgs{
 		EventName:    event.ObjectAccessedHead,

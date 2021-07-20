@@ -330,6 +330,7 @@ func getKVMaxValueSize() int {
 var kvChecksum = os.Getenv("MINIO_NKV_CHECKSUM") != ""
 var use_custome_reader = os.Getenv("MINIO_NKV_USE_CUSTOM_READER") != ""
 var track_minio_stats = os.Getenv("MINIO_ENABLE_STATS") != ""
+var report_minio_stats = os.Getenv("MINIO_REPORT_USTAT") != ""
 var init_stats uint32 = 0
 
 var globalNKVHandle C.uint64_t
@@ -352,7 +353,7 @@ func minio_nkv_open(configPath string) error {
         if (init_stats == 0) {
           atomic.AddUint32(&init_stats, 1)
           var stat_error int = 0
-          if (track_minio_stats) {
+          if (report_minio_stats) {
             status = C.minio_nkv_register_counter(globalNKVHandle, C.CString("minio_upstream"), C.CString("s3_get_req"), &globalMinioStatHandleGetQD);
             if status != 0 {
               fmt.Println("Minio stat registration for s3_get_req failied, error = ", status)
@@ -380,9 +381,10 @@ func minio_nkv_open(configPath string) error {
             }
             if (stat_error == 0) {
               fmt.Println("####### Minio stat counter registration with NKV is successful !! #######")
+              track_minio_stats = true
             } else {
               fmt.Println("####### Problem with stat registration with NKV, disabling stat collection #######")
-              track_minio_stats = false
+              report_minio_stats = false
             }
           } else {
             fmt.Println("####### Minio stat counter registration with NKV is not enabled #######")
@@ -783,6 +785,7 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 		status := 1
 		if k.sync {
 			var actualLengthCint C.int
+                        //fmt.Println("##### Invoking GET , key, length = ", keyStr, len(value), actualLength, k.path)
 			cstatus := C.minio_nkv_get(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), unsafe.Pointer(&value[0]), C.int(len(value)), &actualLengthCint)
 			status = int(cstatus)
 			actualLength = int(actualLengthCint)

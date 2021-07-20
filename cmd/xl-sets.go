@@ -310,22 +310,38 @@ func (s *xlSets) GetDisks(setIndex int) func() []StorageAPI {
 
 
 func (s *xlSets) UpdateCountersToDisk() {
+    var init_stati int = 0
+    statTimeStr := os.Getenv("MINIO_NKV_STAT_INTERVAL")
+    if statTimeStr == "" {
+      init_stati = 10
+    } else {
+      i, err := strconv.Atoi(statTimeStr)
+      if err != nil {
+        fmt.Println("MINIO_NKV_STAT_INTERVAL is incorrect", statTimeStr, err)
+        os.Exit(1)
+      } else {
+        init_stati = i
+      }
+    }
     for {
-      fmt.Println("About to update counters")
-      for _, set := range s.sets {
-        for _, disk := range set.getDisks() {
-          if disk == nil {
-            continue
-          }
-          if err := disk.UpdateStats(); err != nil {
-            fmt.Println("Updating counter stat failed, disk = ", disk)
-          } else {
-            break
+      if (report_minio_stats) {
+        fmt.Println("About to update counters")
+        for _, set := range s.sets {
+          for _, disk := range set.getDisks() {
+            if disk == nil {
+              continue
+            }
+            if err := disk.UpdateStats(); err != nil {
+              fmt.Println("Updating counter stat failed, disk = ", disk)
+            } else {
+              break
+            }
           }
         }
       }
-
-      time.Sleep(900 * time.Millisecond)
+      fmt.Printf("Minio QD stat: TotalGetQD = %d, TotalECReqQD = %d, TotalHeadObjQD = %d\n", uint64(globalTotalGetQD), uint64(globalTotalECReqQD), uint64(globalTotalHeadObjQD))
+      fmt.Printf("Minio IO count stat: TotalGets = %d, TotalHeads = %d\n", uint64(globalTotalGetIOCount), uint64(globalTotalHeadIOCount))
+      time.Sleep(time.Duration(init_stati) * time.Second)
     }
 }
 
@@ -335,15 +351,15 @@ func (s *xlSets) syncSharedVols() {
         syncTimeStr := os.Getenv("MINIO_NKV_SHARED_SYNC_INTERVAL")
         if syncTimeStr == "" {
         	init_multi = 2
-        }
-        i, err := strconv.Atoi(syncTimeStr)
-        if err != nil {
+        } else {
+          i, err := strconv.Atoi(syncTimeStr)
+          if err != nil {
         	fmt.Println("MINIO_NKV_SHARED_SYNC_INTERVAL is incorrect", syncTimeStr, err)
     		os.Exit(1)
-  	} else {
+  	  } else {
     		init_multi = i
-  	}
-
+  	  }
+        }
   	for {
                 if (!globalDontUseECMemPool) {
                   kvPoolEC.PrintCount()
@@ -424,7 +440,9 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
         //Sync vols created by other minio instances in case of shared storage mode
         go s.syncSharedVols()
         
+        //if (report_minio_stats) {
         if (track_minio_stats) {
+          fmt.Println("### Minio stat is enabled.. ###")
           go s.UpdateCountersToDisk()
         }
 
