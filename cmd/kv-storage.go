@@ -142,9 +142,11 @@ func (k *KVStorage) loadVolumes() (*kvVolumes, error) {
 
 	value, err := k.kv.Get(kvVolumesKey, *bufp)
 	if err != nil {
+                fmt.Println (" ### loadVolumes failed during get = ", err, k.path)
 		return volumes, nil
 	}
 	if err = json.Unmarshal(value, volumes); err != nil {
+                fmt.Println (" ### loadVolumes failed during unmarshal = ", err, k.path, value)
 		return nil, err
 	}
 	return volumes, nil
@@ -161,10 +163,12 @@ func (k *KVStorage) SyncVolumes () (err error) {
 }
 
 func (k *KVStorage) MakeVol(volume string) (err error) {
+        fmt.Println (" ### MakeVol = ", volume, k.path)
 	k.volumesMu.Lock()
 	defer k.volumesMu.Unlock()
 	volumes, err := k.loadVolumes()
 	if err != nil {
+                fmt.Println (" ### MakeVol::loadVolumes failed = ", volume, err, k.path)
 		return err
 	}
 
@@ -177,10 +181,13 @@ func (k *KVStorage) MakeVol(volume string) (err error) {
 	volumes.VolInfos = append(volumes.VolInfos, VolInfo{volume, time.Now()})
 	b, err := json.Marshal(volumes)
 	if err != nil {
+                fmt.Println (" ### MakeVol failed during marshal = ", volume, err, k.path)
 		return err
 	}
+        fmt.Println (" ### MakeVol volume data = ", volume, k.path, b)
 	err = k.kv.Put(kvVolumesKey, b)
 	if err != nil {
+                fmt.Println (" ### MakeVol failed during put = ", volume, err, k.path)
 		return err
 	}
 	k.volumes = volumes
@@ -300,7 +307,7 @@ func (k *KVStorage) getKVNSEntry(nskey string, buffer []byte) (val []byte, entry
 		         continue
                        }
 		}
-		if entry.Key != nskey {
+		/*if entry.Key != nskey {
 			fmt.Printf("##### key mismatch, requested: %s, got: %s\n", nskey, entry.Key)
 			tries--
 			if tries == 0 {
@@ -308,7 +315,7 @@ func (k *KVStorage) getKVNSEntry(nskey string, buffer []byte) (val []byte, entry
 				os.Exit(0)
 			}
 			continue
-		}
+		}*/
 		return nil, entry, nil
 	}
 }
@@ -811,7 +818,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
           }
 
         } else {
-          //fmt.Println("### In non-zero copy path::", r.key_name, len(p), r.length, r.total_read, r.k.path)
+          fmt.Println("### In non-zero copy path::", r.key_name, len(p), r.length, r.total_read, r.k.path)
           if (r.total_read >= r.length) {
 	    err = io.EOF
             //fmt.Println("### EOF hit ::", r.total_read, r.length, len(p), r.k.path)
@@ -981,6 +988,7 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
           meta_op_no_stat = true
         }
         if (!meta_op_no_stat || !use_custome_reader) {
+          //fmt.Println("### In ReadFileStream :: ", volume, filePath, length)
           bufp := kvValuePoolMeta.Get().(*[]byte)
           defer kvValuePoolMeta.Put(bufp)
 
@@ -990,7 +998,7 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 	  }
           if (length == -1) {
             length = entry.Size
-            //fmt.Println("### Adjusted length:: ",length, entry.Size, nskey)
+            fmt.Println("### Adjusted length:: ",length, entry.Size, nskey)
           }
         } else {
           var is_meta bool = false
@@ -1410,8 +1418,13 @@ func (k *KVStorage) ReadAll(volume string, filePath string) (buf []byte, err err
  
           if is_meta || strings.Contains(nskey, ".minio.sys") {
             //bufp = kvValuePoolMeta.Get().(*[]byte)
-            //defer kvValuePoolMeta.Put(bufp)           
-            length = 8192 
+            //defer kvValuePoolMeta.Put(bufp)
+            /*if (strings.Contains(nskey, ".minio.sys/multipart/")) {           
+              length = 32768
+            } else {
+              length = 8192
+            }*/
+            length = int64 (kvMaxMetaSize)
             newBuf := make([]byte, length)
             buf, err = k.kv.Get(nskey, newBuf)
             //buf, err = k.kv.Get(nskey, *bufp)

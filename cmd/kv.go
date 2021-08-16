@@ -327,6 +327,19 @@ func getKVMaxValueSize() int {
 	return valSize
 }
 
+var kvMaxMetaSize = getKVMaxMetaSize()
+
+func getKVMaxMetaSize() int {
+        str := os.Getenv("MINIO_NKV_MAX_META_SIZE")
+        if str == "" {
+                return 8192
+        }
+        valSize, err := strconv.Atoi(str)
+        logger.FatalIf(err, "parsing MINIO_NKV_MAX_VALUE_SIZE")
+        return valSize
+}
+
+
 var kvChecksum = os.Getenv("MINIO_NKV_CHECKSUM") != ""
 var use_custome_reader = os.Getenv("MINIO_NKV_USE_CUSTOM_READER") != ""
 var track_minio_stats = os.Getenv("MINIO_ENABLE_STATS") != ""
@@ -474,7 +487,7 @@ var kvValuePoolNoEC = sync.Pool{
 
 var kvValuePoolMeta = sync.Pool{
         New: func() interface{} {
-                b := make([]byte, 8192)
+                b := make([]byte, kvMaxMetaSize)
                 return &b
         },
 }
@@ -699,7 +712,7 @@ func (k *KV) Put(keyStr string, value []byte) error {
 	if k.sync {
 		cstatus := C.minio_nkv_put(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), valuePtr, C.int(len(value)))
 		status = int(cstatus)
-                //fmt.Println("##### Put happened, ", k.path, keyStr, len(value))
+                //fmt.Println("##### Put happened, ", k.path, keyStr, len(value), status)
 	} else {
 		ch := make(chan asyncKVLoopResponse, 1)
 		var response asyncKVLoopResponse
@@ -789,7 +802,7 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
 			cstatus := C.minio_nkv_get(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), unsafe.Pointer(&value[0]), C.int(len(value)), &actualLengthCint)
 			status = int(cstatus)
 			actualLength = int(actualLengthCint)
-                        //fmt.Println("##### GET returned, key, length = ", keyStr, len(value), actualLength, k.path)
+                        //fmt.Println("##### GET returned, key, length = ", keyStr, len(value), actualLength, k.path, status)
 		} else {
 			ch := make(chan asyncKVLoopResponse, 1)
 			var response asyncKVLoopResponse
@@ -882,7 +895,7 @@ func (k *KV) Delete(keyStr string) error {
 	if k.sync {
 		cstatus := C.minio_nkv_delete(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)))
 		status = int(cstatus)
-                //fmt.Println("##### Del happened, ", k.path, keyStr)
+                //fmt.Println("##### Del happened, ", k.path, keyStr, status)
 	} else {
 		ch := make(chan asyncKVLoopResponse, 1)
 		var response asyncKVLoopResponse
