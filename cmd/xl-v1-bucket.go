@@ -20,7 +20,7 @@ import (
 	"context"
 	"sort"
 	"sync"
-        //"fmt"
+        "fmt"
 	"github.com/minio/minio-go/pkg/s3utils"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/policy"
@@ -40,6 +40,16 @@ func (xl xlObjects) MakeBucketWithLocation(ctx context.Context, bucket, location
 	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
 		return BucketNameInvalid{Bucket: bucket}
 	}
+
+        //Check if bucket exists first, taking distributed lock is expensive and not scalable
+        _, berr := xl.getBucketInfo(ctx, bucket)
+        if berr == nil {
+            fmt.Println("## MakeBucketWithLocation, bucket exists..")
+            berr = errVolumeExists
+            return toObjectErr(berr, bucket)
+        } else {
+          fmt.Println("## MakeBucketWithLocation, new bucket may be, go ahead..")
+        }
 
         // Lock a dummy object, this is for minio running in shared mode
         objectLock := xl.nsMutex.NewNSLock("KV", "Volumes" )
