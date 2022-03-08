@@ -62,36 +62,31 @@ S3BENCHPATH="$DSS_S3BENCHMARK_DIR/s3-benchmark"
 # Verify dss-sdk dir exists
 if [ ! -d "$DSS_SDK_DIR" ];
 then
-    echo "dss-sdk repo does not exist. Clone dss-sdk repo to $DSS_SDK_DIR and build dss-sdk first."
-    die 1
+    die "dss-sdk repo does not exist. Clone dss-sdk repo to $DSS_SDK_DIR and build dss-sdk first."
 fi
 
 # Verify lib dir exists
 if [ ! -d "$LIB_DIR" ];
 then
-    echo "dss-sdk lib dir does not exist. Clone dss-sdk repo to $DSS_SDK_DIR and build dss-sdk first."
-    die 1
+    die "dss-sdk lib dir does not exist. Clone dss-sdk repo to $DSS_SDK_DIR and build dss-sdk first."
 fi
 
 # Verify include dir exists
 if [ ! -d "$INCLUDE_DIR" ];
 then
-    echo "dss-sdk include dir does not exist. Clone dss-sdk repo to $DSS_SDK_DIR and build dss-sdk first."
-    die 1
+    die "dss-sdk include dir does not exist. Clone dss-sdk repo to $DSS_SDK_DIR and build dss-sdk first."
 fi
 
 # Verify dss-ecosystem dir exists
 if [ ! -d "$DSS_ECOSYSTEM_DIR" ];
 then
-    echo "dss-ecosystem dir does not exist. Clone dss-ecosystem repo to $DSS_ECOSYSTEM_DIR first."
-    die 1
+    die "dss-ecosystem dir does not exist. Clone dss-ecosystem repo to $DSS_ECOSYSTEM_DIR first."
 fi
 
 # Verify dss_s3benchmark dir exists
 if [ ! -d "$DSS_S3BENCHMARK_DIR" ];
 then
-    echo "dss-s3benchmark dir does not exist. Clone dss-ecosystem repo to $DSS_ECOSYSTEM_DIR first."
-    die 1
+    die "dss-s3benchmark dir does not exist. Clone dss-ecosystem repo to $DSS_ECOSYSTEM_DIR first."
 fi
 
 # Remove existing artifacts
