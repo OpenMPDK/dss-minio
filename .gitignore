@@ -24,3 +24,6 @@ stage/
 .sia_temp/
 config.json
 healthcheck
+*.tgz
+mc
+s3-benchmark
