@@ -26,6 +26,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+        //"fmt"
 	"github.com/minio/minio/cmd/logger"
 )
 
@@ -433,6 +434,7 @@ func deleteXLMetdata(ctx context.Context, disk StorageAPI, bucket, prefix string
 
 // writeXLMetadata - writes `xl.json` to a single disk.
 func writeXLMetadata(ctx context.Context, disk StorageAPI, bucket, prefix string, xlMeta xlMetaV1) error {
+        //fmt.Println("xlMeta during write = ", xlMeta)
 	jsonFile := path.Join(prefix, xlMetaJSONFile)
 
 	// Marshal json.

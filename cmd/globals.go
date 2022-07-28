@@ -187,6 +187,7 @@ var (
         globalTotalHeadIOCount uint64
         globalTotalGetIOCount uint64
         globalIsStopping bool = false
+        gIsRDDQHandleSet bool = true
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()

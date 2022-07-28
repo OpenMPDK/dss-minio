@@ -10,6 +10,9 @@ import (
 type KVInterface interface {
 	Put(keyStr string, value []byte) error
 	Get(keyStr string, value []byte) ([]byte, error)
+	Get_Rdd(keyStr string, remoteAddress uint64, valueLen uint64, rKey uint32, rQhandle uint16) error
+        Set_Rdd_Param(remoteClientId uint64, NQNId string, rQhandle uint16) (err error)
+        Clear_Rdd_Param(remoteClientId uint64) (err error)
 	Delete(keyStr string) error
 	List(prefix string, buf []byte) ([]string, error)
 	DiskInfo() (DiskInfo, error)

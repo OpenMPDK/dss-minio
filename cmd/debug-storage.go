@@ -196,3 +196,22 @@ func (d *debugStorage) ReadAndCopy(volume string, filePath string, writer io.Wri
         return err
 }
 
+func (d *debugStorage) ReadRDDWay(volume string, filePath string, remoteAddress uint64, valueLen uint64, 
+                                  rKey uint32, rQhandle uint16) (err error) {
+        err = d.s.ReadRDDWay(volume, filePath, remoteAddress, valueLen, rKey, rQhandle)
+        if d.enable {
+                fmt.Printf("%s: ReadRDDWay(%s, %s) (%s)\n", d.path, volume, filePath, errStr(err))
+        }
+        return err
+}
+
+func (d *debugStorage) AddRDDParam(remoteClientId uint64, NQNId string, rQhandle uint16) (err error) {
+        err = d.s.AddRDDParam(remoteClientId, NQNId, rQhandle)
+        if d.enable {
+                fmt.Printf("%s: AddRDDParam(%s, %d) (%s)\n", d.path, NQNId, rQhandle, errStr(err))
+        }
+        return err
+}
+
+
+

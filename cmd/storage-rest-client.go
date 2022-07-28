@@ -397,6 +397,16 @@ func (client *storageRESTClient) ReadAndCopy(volume string, filePath string, wri
   return nil
 }
 
+func (client *storageRESTClient) ReadRDDWay(volume string, filePath string, remoteAddress uint64, valueLen uint64,
+                               rKey uint32, rQhandle uint16) (err error) {
+
+  return nil
+}
+
+func (client *storageRESTClient) AddRDDParam(remoteClientId uint64, NQNId string, rQhandle uint16) (err error) {
+
+  return nil
+}
 
 
 // Gets peer storage server's instanceID - to be used with every REST call for validation.

@@ -68,3 +68,18 @@ func (k *KVEmulator) nkv_close() error {
         return nil
 }
 
+func (k *KVEmulator) Get_Rdd(keyStr string, remoteAddress uint64, valueLen uint64, rKey uint32, rQhandle uint16) error {
+
+       return nil
+}
+
+func (k *KVEmulator) Set_Rdd_Param(remoteClientId uint64, NQNId string, rQhandle uint16) (err error) {
+
+       return nil
+}
+
+func (k *KVEmulator) Clear_Rdd_Param(remoteClientId uint64) (err error) {
+
+      return nil
+}
+

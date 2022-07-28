@@ -1,21 +1,33 @@
 package cmd
 
 /*
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "nkv_api.h"
 #include "nkv_result.h"
+//#include "rdd_cl.h"
 
 struct minio_nkv_handle {
   uint64_t nkv_handle;
   uint64_t container_hash;
   uint64_t network_path_hash;
+  char nqn_ip_port[512];
 };
 
 //uint64_t instance_uuid = 0;
 static int minio_nkv_open(char *config, uint64_t *nkv_handle, uint64_t *globalNKVInstanceUuid) {
   //uint64_t instance_uuid = 0;
   nkv_result result;
+  //rdd_cl_ctx_params_t param = {RDD_PD_GLOBAL};
+  //struct rdd_client_ctx_s *g_rdd_cl_ctx = rdd_cl_init(param);
+
+  //rdd_cl_conn_params_t rdd_params;
+  //rdd_params.ip = "101.100.10.24";
+  //rdd_params.port = "1234";
+  //printf("About to open NKV rdd connection to ip = %s, port = %s ", rdd_params.ip, rdd_params.port);
+  //rdd_cl_create_conn(g_rdd_cl_ctx, rdd_params);
+  
   result = nkv_open(config, "minio", "msl-ssg-sk01", 1023, globalNKVInstanceUuid, nkv_handle);
   return result;
 }
@@ -67,6 +79,7 @@ static int minio_nkv_set_stat_counter(struct minio_nkv_handle *handle, unsigned 
 
 static int minio_nkv_open_path(struct minio_nkv_handle *handle, char *mount_point) {
   uint32_t index = 0;
+  uint32_t found_mp = 0;
   uint32_t cnt_count = NKV_MAX_ENTRIES_PER_CALL;
   nkv_container_info *cntlist = malloc(sizeof(nkv_container_info)*NKV_MAX_ENTRIES_PER_CALL);
   memset(cntlist, 0, sizeof(nkv_container_info) * NKV_MAX_ENTRIES_PER_CALL);
@@ -82,20 +95,34 @@ static int minio_nkv_open_path(struct minio_nkv_handle *handle, char *mount_poin
     printf("NKV getting physical container list failed !!, error = %d\n", result);
     exit(1);
   }
-
+  
   for (uint32_t i = 0; i < cnt_count; i++) {
     for (int p = 0; p < cntlist[i].num_container_transport; p++) {
-      printf("Transport information :: hash = %lu, id = %d, address = %s, port = %d, family = %d, speed = %d, status = %d, numa_node = %d\n",
-              cntlist[i].transport_list[p].network_path_hash, cntlist[i].transport_list[p].network_path_id, cntlist[i].transport_list[p].ip_addr,
+      printf("Transport information :: hash = %lu, id = %d, nqn_name = %s, address = %s, port = %d, family = %d, speed = %d, status = %d, numa_node = %d\n",
+              cntlist[i].transport_list[p].network_path_hash, cntlist[i].transport_list[p].network_path_id, 
+              cntlist[i].transport_list[p].nqn_name, cntlist[i].transport_list[p].ip_addr,
               cntlist[i].transport_list[p].port, cntlist[i].transport_list[p].addr_family, cntlist[i].transport_list[p].speed,
               cntlist[i].transport_list[p].status, cntlist[i].transport_list[p].numa_node);
+
       if(!strcmp(cntlist[i].transport_list[p].mount_point, mount_point)) {
-              handle->container_hash = cntlist[i].container_hash;
-              handle->network_path_hash = cntlist[i].transport_list[p].network_path_hash;
-              return 0;
+        handle->container_hash = cntlist[i].container_hash;
+        handle->network_path_hash = cntlist[i].transport_list[p].network_path_hash;
+        sprintf(handle->nqn_ip_port, "%s-%s-%d", cntlist[i].transport_list[p].nqn_name,
+                cntlist[i].transport_list[p].ip_addr, cntlist[i].transport_list[p].port);
+        printf("## nqn_ip_port = %s\n", handle->nqn_ip_port); 
+        found_mp = 1;
+        break;              
+        //return 0;
       }
     }
   }
+  for (int i = 0; i < NKV_MAX_ENTRIES_PER_CALL; i++) {
+    free(cntlist[i].transport_list);
+  }
+  free (cntlist);
+  if (found_mp) {
+    return 0;
+  } 
   return 1;
 }
 
@@ -123,13 +150,32 @@ static int minio_nkv_get(struct minio_nkv_handle *handle, void *key, int keyLen,
   ctx.ks_id = 0;
 
   const nkv_key  nkvkey = {key, keyLen};
-  nkv_retrieve_option option = {0};
-
+  nkv_retrieve_option r_option = {0};
   nkv_value nkvvalue = {value, valueLen, 0};
-  result = nkv_retrieve_kvp(handle->nkv_handle, &ctx, &nkvkey, &option, &nkvvalue);
+  result = nkv_retrieve_kvp(handle->nkv_handle, &ctx, &nkvkey, &r_option, &nkvvalue);
   *actual_length = nkvvalue.actual_length;
   return result;
 }
+
+static int minio_nkv_get_rdd(struct minio_nkv_handle *handle, void *key, int keyLen, uint64_t remote_addr, uint64_t valueLen, uint32_t rkey, uint16_t rQhandle) {
+  nkv_result result;
+  nkv_io_context ctx;
+  ctx.is_pass_through = 1;
+  ctx.container_hash = handle->container_hash;
+  ctx.network_path_hash = handle->network_path_hash;
+  ctx.ks_id = 0;
+
+  const nkv_key  nkvkey = {key, keyLen};
+  nkv_retrieve_option r_option = {0};
+  r_option.nkv_retrieve_rdd = 1;
+
+  nkv_value nkvvalue = {(void*)remote_addr, valueLen, 0};
+  //printf("### Invoking nkv_retrieve_kvp_rdd, key = %s, remote_addr = %p, valueLen = %u, rkey = %x, rQhandle = %x \n",
+  //       (char*)nkvkey.key, remote_addr, valueLen, rkey, rQhandle);
+  result = nkv_retrieve_kvp_rdd(handle->nkv_handle, &ctx, &nkvkey, &r_option, &nkvvalue, rkey, rQhandle);
+  return result;
+}
+
 
 static int minio_nkv_delete(struct minio_nkv_handle *handle, void *key, int keyLen) {
   nkv_result result;
@@ -351,6 +397,7 @@ var globalNKVInstanceUuid C.uint64_t
 var globalMinioStatHandleGetQD unsafe.Pointer 
 var globalMinioStatHandleECQD  unsafe.Pointer
 
+//go:noinline
 func minio_nkv_open(configPath string) error {
 	if globalNKVHandle != 0 {
 		return nil
@@ -1014,4 +1061,49 @@ func (k *KV) nkv_close()  error {
         return nil
 }
 
+func (k *KV) Get_Rdd(keyStr string, remoteAddress uint64, valueLen uint64, rKey uint32, rQhandle uint16) error {
+
+        if !strings.HasPrefix(keyStr, kvDataDir) {
+                keyStr = pathJoin(kvMetaDir, keyStr)
+        }
+        key := []byte(keyStr)
+        if len(key) > kvKeyLength {
+                fmt.Println("##### invalid key length", keyStr, len(key), kvKeyLength)
+                return errKeyLengthBig
+                //os.Exit(0)
+        }
+
+        max_supported_size := int (globalMaxKVObject)
+
+        if int(valueLen) > max_supported_size {
+                fmt.Println("##### invalid value length during GET", keyStr, valueLen, max_supported_size)
+                return errValueTooLong
+        }
+        //fmt.Printf("##### Invoking RDD GET, key=%s, length=%d, Addr=%x, rKey=%x, rQhandle=%x, path=%s\n", keyStr, valueLen, remoteAddress, rKey, rQhandle, k.path)
+        cstatus := C.minio_nkv_get_rdd(&k.handle, unsafe.Pointer(&key[0]), C.int(len(key)), C.ulong(remoteAddress), 
+                                       C.ulong(valueLen), C.uint(rKey), C.ushort(rQhandle))
+        status := int(cstatus)
+        //fmt.Println("##### RDD GET returned, key, length = ", keyStr, valueLen, k.path)
+
+        if status != 0 {
+          return errFileNotFound
+        }
+
+       return nil
+}
+
+func (k *KV) Set_Rdd_Param(remoteClientId uint64, NQNId string, rQhandle uint16) (err error) {
+
+       nqn_ipport := "" 
+       //C.GoString(&k.handle.nqn_ip_port)     
+       if (nqn_ipport != NQNId) {
+         return errors.New("Invalid Disk")
+       }
+       return nil
+}
+ 
+func (k *KV) Clear_Rdd_Param(remoteClientId uint64) (err error) {
+
+      return nil
+}
 

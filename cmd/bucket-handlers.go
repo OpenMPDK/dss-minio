@@ -118,6 +118,7 @@ func (api objectAPIHandlers) GetBucketLocationHandler(w http.ResponseWriter, r *
 	encodedSuccessResponse := encodeResponse(LocationResponse{})
 	// Get current region.
 	region := globalServerConfig.GetRegion()
+        fmt.Println("Global region, minio region = ", region, globalMinioDefaultRegion)
 	if region != globalMinioDefaultRegion {
 		encodedSuccessResponse = encodeResponse(LocationResponse{
 			Location: region,

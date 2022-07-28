@@ -538,6 +538,7 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 // -----------
 // The HEAD operation retrieves metadata from an object without returning the object itself.
 func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Request) {
+        fmt.Println("@@@@@@@@ HeadObjectHandler called....")
 	ctx := newContext(r, w, "HeadObject")
 
 	defer logger.AuditLog(w, r, "HeadObject", mustGetClaimsFromToken(r))
@@ -629,6 +630,7 @@ func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Re
         }
 
 	objInfo, err := getObjectInfo(ctx, bucket, object, opts)
+        fmt.Println("############objInfo.UserDefined, X-Amz-Meta-Rdd_param = " , objInfo.UserDefined, objInfo.UserDefined["X-Amz-Meta-Rdd_param"]) 
 	if err != nil {
 		writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
                 if (track_minio_stats) {
@@ -1371,6 +1373,7 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 	// get gateway encryption options
 	var opts ObjectOptions
 	opts, err = putOpts(ctx, r, bucket, object, metadata)
+        //fmt.Println("@@@ putOpts= ", opts)
 	if err != nil {
 		writeErrorResponseHeadersOnly(w, toAPIError(ctx, err))
 		return
