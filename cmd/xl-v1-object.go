@@ -151,14 +151,18 @@ func (xl xlObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBuc
 
 // GetObjectNInfo - returns object info and an object
 // Read(Closer). When err != nil, the returned reader is always nil.
-func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object_key string, rs *HTTPRangeSpec, h http.Header, 
+func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, rs *HTTPRangeSpec, h http.Header, 
                                    lockType LockType, opts ObjectOptions) (gr *GetObjectReader, err error) {
-        var object string
-        key_slices := strings.Split(object_key, "-rdd-")
-        if (len(key_slices) == 1) {
-          object = key_slices[0]
-        } else {
-          object = key_slices[4]
+        //var object string
+        var key_slices []string
+
+        if (!globalNoRDD) {
+          key_slices = strings.Split(object, globalRddSeparator)
+          if (len(key_slices) == 1) {
+            object = key_slices[0]
+          } else {
+            object = key_slices[4]
+          }
         }
 	var nsUnlocker = func() {}
         //debug.PrintStack()
@@ -256,7 +260,7 @@ func (xl xlObjects) GetObject(ctx context.Context, bucket, object string, startO
 func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, etag string, opts ObjectOptions, metaArr []xlMetaV1, xlMeta xlMetaV1, errs []error, key_slices []string) error {
         //debug.PrintStack()
         var is_rdd_way bool = false
-        if (len(key_slices) == 5) {
+        if ((!globalNoRDD && len(key_slices) == 5)) {
           is_rdd_way = true
           //fmt.Println("#### RDD Get request = ", bucket, object, 
           //             key_slices[0], key_slices[1], key_slices[2], key_slices[3], key_slices[4])
@@ -385,9 +389,10 @@ func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, 
           if (is_rdd_way) {
             remoteAddr,_ := strconv.ParseUint(key_slices[0], 16, 64)
             remoteValLen,_ := strconv.ParseUint(key_slices[1], 10, 64)
-            rQhandle,_ := strconv.ParseUint(key_slices[2], 16, 64)
-            rKey,_ := strconv.ParseUint(key_slices[3], 16, 64)
-            err_rdd := disk.ReadRDDWay(bucket, object, remoteAddr, remoteValLen, uint32(rKey), uint16(rQhandle))
+            //rQhandle,_ := strconv.ParseUint(key_slices[2], 16, 64)
+            rKey,_ := strconv.ParseUint(key_slices[2], 16, 64)
+            //err_rdd := disk.ReadRDDWay(bucket, object, remoteAddr, remoteValLen, uint32(rKey), uint16(rQhandle))
+            err_rdd := disk.ReadRDDWay(bucket, object, remoteAddr, remoteValLen, uint32(rKey), key_slices[3])
             if (err_rdd != nil) {
               return toObjectErr(err_rdd, bucket, object)
             }
@@ -743,19 +748,20 @@ func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object str
 
 
 // getObjectInfo - wrapper for reading object metadata and constructs ObjectInfo.
-func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object_key string) (objInfo ObjectInfo, err error) {
+func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object string) (objInfo ObjectInfo, err error) {
         //fmt.Println("## getObjectInfo called = ",bucket, object_key)
         //debug.PrintStack()
-        var object string
+        //var object string
         var is_rdd_way bool = false
-        key_slices := strings.Split(object_key, "-rdd-")
-        if (len(key_slices) == 1) {
-          object = key_slices[0]
-        } else {
-          object = key_slices[4]
-          is_rdd_way = true
+        if (!globalNoRDD) {
+          key_slices := strings.Split(object, globalRddSeparator)
+          if (len(key_slices) == 1) {
+            object = key_slices[0]
+          } else {
+            object = key_slices[4]
+            is_rdd_way = true
+          }
         }
-
 	disks := xl.getDisks()
 
         if (!globalOptimizedMetaReader) {
@@ -990,8 +996,14 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 	}
         var onlineDisks []StorageAPI
         var sizeWritten int64
+        var isRDDMetaKey bool = false
 
-        if (!globalNoEC || (data.Size() > globalMaxKVObject)) {
+        //special key if RDD is enabled and client wants to use it
+        if strings.Contains(object, ".dss.rdd.init") {
+          isRDDMetaKey = true
+        }
+
+        if ((!isRDDMetaKey) && (!globalNoEC || (data.Size() > globalMaxKVObject))) {
 
 	  // Order disks according to erasure distribution
 	  onlineDisks = shuffleDisks(xl.getDisks(), partsMetadata[0].Erasure.Distribution)
@@ -1133,17 +1145,20 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
             return ObjectInfo{}, toObjectErr(err, bucket, object) 
           }
           
-          if strings.Contains(object, ".dss.rdd.init") {
-            //Its a special put for saving RDD connection handles
+          if (isRDDMetaKey) {
+            //Its a special put for saving RDD connection handles, 
+            //key_format = <client_id>.dss.rdd.init, value_format = <ip-port>::<QHandle>##<ip-port>::<QHandle>##..
+
             fmt.Println("RDD connection PUT, key = ", object)
             obj_slices := strings.Split(object, ".")
-            remote_client_id, _ := strconv.ParseUint(obj_slices[0], 16, 64)
+            //remote_client_id, _ := strconv.ParseUint(obj_slices[0], 16, 64)
             str_buffer := string(buffer[:])
             fmt.Println("RDD connection PUT, value = ", str_buffer)
             key_slices := strings.Split(str_buffer, "##")
             fmt.Println("RDD connection PUT, key_slices = ", key_slices)
             disks := xl.getDisks()
-            if (len(disks) > len(key_slices)) {
+            //if (len(disks) > len(key_slices)) {
+            if (false) {
               fmt.Println("Invalid number of RDD Connection handle passed", len(disks), len(key_slices))
               gIsRDDQHandleSet = false
               err = errors.New("Invalid RDD param")
@@ -1152,6 +1167,10 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
             }
             var num_update int = 0
             for i := 0; i < len(key_slices); i++ {
+              if (key_slices[i] == "END") {
+                fmt.Println("Done, no more rdd params")
+                break;
+              }
               rdd_params := strings.Split(key_slices[i], "::")
               fmt.Println("rdd param format", rdd_params)
               if (len(rdd_params) != 2) {
@@ -1160,13 +1179,16 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
                 err = errors.New("Invalid RDD param")
                 return ObjectInfo{}, toObjectErr(err, bucket, object)
               } else {
-                var num_update uint32 = 0
-                for index := 0; index < len(disks); i++ {
-                  rQhandle,_ := strconv.ParseUint(obj_slices[0], 16, 64)
-                  err = disks[index].AddRDDParam(remote_client_id, rdd_params[0], uint16(rQhandle))
+                for index := 0; index < len(disks); index++ {
+                  rQhandle,_ := strconv.ParseUint(rdd_params[1], 10, 64)
+                  nqn_ip_port := string(rdd_params[0])
+                  nqn_ip_port = strings.TrimRight(nqn_ip_port, string(0))
+                  fmt.Println("##nqn_ip_port == ", []byte(nqn_ip_port))
+                  //err = disks[index].AddRDDParam(obj_slices[0], rdd_params[0], uint16(rQhandle))
+                  err = disks[index].AddRDDParam(obj_slices[0], nqn_ip_port, uint16(rQhandle))
                   if err == nil {
                     num_update++
-                    break;
+                    //break;
                   }
                   
                 }
@@ -1183,7 +1205,8 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
             if (num_update != len(disks)) {
               fmt.Println("WARNING: RDD Connection handle is not set for all the disks: ", len(disks), num_update)              
             }
-            
+            gIsRDDQHandleSet = true
+            return ObjectInfo{}, nil  
           } else {
             disks := xl.getDisks()
             keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)

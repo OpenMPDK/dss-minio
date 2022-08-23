@@ -6,6 +6,7 @@ package cmd
 #include <stdlib.h>
 #include "nkv_api.h"
 #include "nkv_result.h"
+
 //#include "rdd_cl.h"
 
 struct minio_nkv_handle {
@@ -107,8 +108,7 @@ static int minio_nkv_open_path(struct minio_nkv_handle *handle, char *mount_poin
       if(!strcmp(cntlist[i].transport_list[p].mount_point, mount_point)) {
         handle->container_hash = cntlist[i].container_hash;
         handle->network_path_hash = cntlist[i].transport_list[p].network_path_hash;
-        sprintf(handle->nqn_ip_port, "%s-%s-%d", cntlist[i].transport_list[p].nqn_name,
-                cntlist[i].transport_list[p].ip_addr, cntlist[i].transport_list[p].port);
+        sprintf(handle->nqn_ip_port, "%s-%d", cntlist[i].transport_list[p].ip_addr, cntlist[i].transport_list[p].port);        
         printf("## nqn_ip_port = %s\n", handle->nqn_ip_port); 
         found_mp = 1;
         break;              
@@ -460,6 +460,7 @@ func newKV(path string, sync bool) (*KV, error) {
 	kv.sync = sync
 	kv.handle.nkv_handle = globalNKVHandle
 	kv.kvHashSumMap = make(map[string]*kvHashSum)
+	kv.kvRDDHandleMap = make(map[string]uint16)
 	cs := C.CString(path)
 	status := C.minio_nkv_open_path(&kv.handle, C.CString(path))
 	C.free(unsafe.Pointer(cs))
@@ -481,6 +482,8 @@ type KV struct {
 	sync           bool
 	kvHashSumMap   map[string]*kvHashSum
 	kvHashSumMapMu sync.RWMutex
+        kvRDDHandleMap map[string]uint16
+        //kvRDDHandleMapMu sync.RWMutex
 }
 
 var num_alloc uint64 = 0
@@ -1061,7 +1064,15 @@ func (k *KV) nkv_close()  error {
         return nil
 }
 
-func (k *KV) Get_Rdd(keyStr string, remoteAddress uint64, valueLen uint64, rKey uint32, rQhandle uint16) error {
+func (k *KV) Get_Rdd(keyStr string, remoteAddress uint64, valueLen uint64, rKey uint32, remoteClientId string) error {
+        //var rQhandle uint16 = 0
+        rQhandle, found := k.kvRDDHandleMap[remoteClientId]
+        if !found && rQhandle == 0 {
+          fmt.Println("## Error: No Qhandle found - ", remoteClientId, k.path, k.kvRDDHandleMap)
+          return errors.New("No Qhandle found")
+        } else {
+          //fmt.Println("## Got rdd handle ! ", remoteClientId, k.path, rQhandle) 
+        }
 
         if !strings.HasPrefix(keyStr, kvDataDir) {
                 keyStr = pathJoin(kvMetaDir, keyStr)
@@ -1092,17 +1103,23 @@ func (k *KV) Get_Rdd(keyStr string, remoteAddress uint64, valueLen uint64, rKey 
        return nil
 }
 
-func (k *KV) Set_Rdd_Param(remoteClientId uint64, NQNId string, rQhandle uint16) (err error) {
+func (k *KV) Set_Rdd_Param(remoteClientId string, NQNId string, rQhandle uint16) (err error) {
+       nqn_ipport := C.GoString((*C.char)(unsafe.Pointer(&k.handle.nqn_ip_port)))
+       fmt.Println("In Set_Rdd_Param::", remoteClientId, nqn_ipport, NQNId, rQhandle)
+       //if (nqn_ipport != NQNId) {
+       //if strings.Compare(NQNId, nqn_ipport) != 0 {
 
-       nqn_ipport := "" 
-       //C.GoString(&k.handle.nqn_ip_port)     
-       if (nqn_ipport != NQNId) {
+       if !strings.Contains(NQNId, nqn_ipport) {
+         fmt.Println("##Mismatch = ", len(nqn_ipport), len(NQNId), nqn_ipport, NQNId)
          return errors.New("Invalid Disk")
        }
+
+       k.kvRDDHandleMap[remoteClientId] = rQhandle
+       fmt.Println("In Set_Rdd_Param, exiting...", remoteClientId, nqn_ipport, NQNId, rQhandle, k.kvRDDHandleMap)
        return nil
 }
  
-func (k *KV) Clear_Rdd_Param(remoteClientId uint64) (err error) {
+func (k *KV) Clear_Rdd_Param(remoteClientId string) (err error) {
 
       return nil
 }

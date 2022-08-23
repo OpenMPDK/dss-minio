@@ -178,16 +178,18 @@ var (
         globalOptimizedMetaReader bool 
         globalMetaOptNoStat bool 
         globalNoEC bool 
+        globalNoRDD bool = false 
         globalNoReadVerifyList bool 
         globalECBlockSizeKB int64 
         globalInstanceHost string
+        globalRddSeparator string
         globalTotalGetQD uint64
         globalTotalECReqQD uint64
         globalTotalHeadObjQD uint64
         globalTotalHeadIOCount uint64
         globalTotalGetIOCount uint64
         globalIsStopping bool = false
-        gIsRDDQHandleSet bool = true
+        gIsRDDQHandleSet bool = false
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()

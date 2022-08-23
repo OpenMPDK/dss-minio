@@ -1477,13 +1477,13 @@ func (k *KVStorage) UpdateStats() error {
 }
 
 func (k *KVStorage) ReadRDDWay(volume string, filePath string, remoteAddress uint64, valueLen uint64,
-                               rKey uint32, rQhandle uint16) (err error) {
+                               rKey uint32, remoteClientId string) (err error) {
 
   nskey := pathJoin(volume, filePath)
   if !strings.HasSuffix(nskey, xlMetaJSONFile) || !strings.Contains(nskey, ".minio.sys") {
     nskey = k.DataKey(nskey)
   }
-  err_kv := k.kv.Get_Rdd(nskey, remoteAddress, valueLen, rKey, rQhandle)
+  err_kv := k.kv.Get_Rdd(nskey, remoteAddress, valueLen, rKey, remoteClientId)
   if err_kv != nil {
     return err_kv
   }
@@ -1491,7 +1491,7 @@ func (k *KVStorage) ReadRDDWay(volume string, filePath string, remoteAddress uin
 
 }
 
-func (k *KVStorage) AddRDDParam(remoteClientId uint64, NQNId string, rQhandle uint16) (err error) {
+func (k *KVStorage) AddRDDParam(remoteClientId string, NQNId string, rQhandle uint16) (err error) {
 
   err_kv := k.kv.Set_Rdd_Param(remoteClientId, NQNId, rQhandle)
   if err_kv != nil {

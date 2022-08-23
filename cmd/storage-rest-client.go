@@ -398,12 +398,12 @@ func (client *storageRESTClient) ReadAndCopy(volume string, filePath string, wri
 }
 
 func (client *storageRESTClient) ReadRDDWay(volume string, filePath string, remoteAddress uint64, valueLen uint64,
-                               rKey uint32, rQhandle uint16) (err error) {
+                               rKey uint32, remoteClientId string) (err error) {
 
   return nil
 }
 
-func (client *storageRESTClient) AddRDDParam(remoteClientId uint64, NQNId string, rQhandle uint16) (err error) {
+func (client *storageRESTClient) AddRDDParam(remoteClientId string, NQNId string, rQhandle uint16) (err error) {
 
   return nil
 }

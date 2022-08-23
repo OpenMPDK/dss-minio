@@ -523,6 +523,18 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
         }
         fmt.Println("### Max KV object size supported = ###", globalMaxKVObject)
 
+        globalNoRDD = false
+        if os.Getenv("MINIO_DISABLE_RDD") != "" {
+          fmt.Println("### Setting up Minio without RDD support.. ###")
+          globalNoRDD = true
+        }
+
+        globalRddSeparator = "-rdd-"
+        if v := os.Getenv("MINIO_RDD_KEY_SEPARATOR"); v != "" {
+          globalRddSeparator = v
+        }
+        fmt.Printf("### RDD Key separator  = %s\n", globalRddSeparator)
+
         globalDummy_read = -1
        
 	return s, nil

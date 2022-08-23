@@ -172,7 +172,7 @@ func (api objectAPIHandlers) ListObjectsV1Handler(w http.ResponseWriter, r *http
 		return
 	}
         var org_prefix string = prefix
-        key_slices := strings.Split(prefix, "-rdd-")
+        key_slices := strings.Split(prefix, globalRddSeparator)
         if (len(key_slices) == 1) {
           prefix = key_slices[0]
         } else {
