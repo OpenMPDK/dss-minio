@@ -155,13 +155,14 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
                                    lockType LockType, opts ObjectOptions) (gr *GetObjectReader, err error) {
         //var object string
         var key_slices []string
-
+        var is_rdd_way bool = false
         if (!globalNoRDD) {
           key_slices = strings.Split(object, globalRddSeparator)
           if (len(key_slices) == 1) {
             object = key_slices[0]
           } else {
             object = key_slices[4]
+            is_rdd_way = true
           }
         }
 	var nsUnlocker = func() {}
@@ -210,6 +211,9 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 	//objInfo, err = xl.getObjectInfo(ctx, bucket, object)
 	objInfo, metaArr, xlMeta, errs, err_obj := xl.getObjectInfoVerbose(ctx, bucket, object)
         //fmt.Println("objInfo.UserDefined = " , objInfo.UserDefined)
+        if (is_rdd_way) {
+          objInfo.Size = int64(len(objInfo.ETag))
+        }
 	if err_obj != nil {
 		nsUnlocker()
 		return nil, toObjectErr(err_obj, bucket, object)
@@ -225,7 +229,7 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 	go func() {
 		//err := xl.getObject(ctx, bucket, object, off, length, pw, "", opts)
 		//err := xl.getObjectNoMeta(ctx, bucket, object, off, length, pw, objInfo.ETag, opts, metaArr, xlMeta, errs, key_slices)
-		err := xl.getObjectNoMeta(ctx, bucket, object, off, length, pw, "", opts, metaArr, xlMeta, errs, key_slices)
+		err := xl.getObjectNoMeta(ctx, bucket, object, off, length, pw, objInfo.ETag, opts, metaArr, xlMeta, errs, key_slices)
                 //block := make([]byte, length)
                 //_, err := io.Copy(pw, bytes.NewReader(block))
                 
