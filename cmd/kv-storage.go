@@ -163,7 +163,7 @@ func (k *KVStorage) SyncVolumes () (err error) {
 }
 
 func (k *KVStorage) MakeVol(volume string) (err error) {
-        fmt.Println (" ### MakeVol = ", volume, k.path)
+        //fmt.Println (" ### MakeVol = ", volume, k.path)
 	k.volumesMu.Lock()
 	defer k.volumesMu.Unlock()
 	volumes, err := k.loadVolumes()
@@ -184,7 +184,7 @@ func (k *KVStorage) MakeVol(volume string) (err error) {
                 fmt.Println (" ### MakeVol failed during marshal = ", volume, err, k.path)
 		return err
 	}
-        fmt.Println (" ### MakeVol volume data = ", volume, k.path, b)
+        //fmt.Println (" ### MakeVol volume data = ", volume, k.path, b)
 	err = k.kv.Put(kvVolumesKey, b)
 	if err != nil {
                 fmt.Println (" ### MakeVol failed during put = ", volume, err, k.path)
@@ -818,7 +818,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
           }
 
         } else {
-          fmt.Println("### In non-zero copy path::", r.key_name, len(p), r.length, r.total_read, r.k.path)
+          //fmt.Println("### In non-zero copy path::", r.key_name, len(p), r.length, r.total_read, r.k.path)
           if (r.total_read >= r.length) {
 	    err = io.EOF
             //fmt.Println("### EOF hit ::", r.total_read, r.length, len(p), r.k.path)
@@ -998,7 +998,7 @@ func (k *KVStorage) ReadFileStream(volume, filePath string, offset, length int64
 	  }
           if (length == -1) {
             length = entry.Size
-            fmt.Println("### Adjusted length:: ",length, entry.Size, nskey)
+            //fmt.Println("### Adjusted length:: ",length, entry.Size, nskey)
           }
         } else {
           var is_meta bool = false
