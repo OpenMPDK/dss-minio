@@ -1415,3 +1415,15 @@ func (s *posix) ReadAndCopy(volume string, filePath string, writer io.Writer) (e
   return nil
 }
 
+func (s *posix) ReadRDDWay(volume string, filePath string, remoteAddress uint64, valueLen uint64,
+                               rKey uint32, remoteClientId string) (err error) {
+
+        return nil
+}
+
+func (s *posix) AddRDDParam(remoteClientId string, NQNId string, rQhandle uint16) (err error) {
+
+  return nil
+}
+
+

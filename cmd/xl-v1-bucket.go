@@ -182,6 +182,7 @@ func (xl xlObjects) GetBucketInfo(ctx context.Context, bucket string) (bi Bucket
 	if err != nil {
 		return bi, toObjectErr(err, bucket)
 	}
+        //fmt.Println("### GetBucketInfo returning::", bucketInfo)
 	return bucketInfo, nil
 }
 

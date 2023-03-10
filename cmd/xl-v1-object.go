@@ -25,6 +25,8 @@ import (
 	"strconv"
 	"sync"
         "fmt"
+        "strings"
+        "errors"
         "hash/crc32"
         //"runtime/debug"
 	"github.com/minio/minio/cmd/logger"
@@ -149,7 +151,20 @@ func (xl xlObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBuc
 
 // GetObjectNInfo - returns object info and an object
 // Read(Closer). When err != nil, the returned reader is always nil.
-func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, rs *HTTPRangeSpec, h http.Header, lockType LockType, opts ObjectOptions) (gr *GetObjectReader, err error) {
+func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, rs *HTTPRangeSpec, h http.Header, 
+                                   lockType LockType, opts ObjectOptions) (gr *GetObjectReader, err error) {
+        //var object string
+        var key_slices []string
+        var is_rdd_way bool = false
+        if (!globalNoRDD) {
+          key_slices = strings.Split(object, globalRddSeparator)
+          if (len(key_slices) == 1) {
+            object = key_slices[0]
+          } else {
+            object = key_slices[4]
+            is_rdd_way = true
+          }
+        }
 	var nsUnlocker = func() {}
         //debug.PrintStack()
         //fmt.Println("@@@@ GetObjectNInfo called ::", bucket, object );
@@ -195,6 +210,10 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 	//var objInfo ObjectInfo
 	//objInfo, err = xl.getObjectInfo(ctx, bucket, object)
 	objInfo, metaArr, xlMeta, errs, err_obj := xl.getObjectInfoVerbose(ctx, bucket, object)
+        //fmt.Println("objInfo.UserDefined = " , objInfo.UserDefined)
+        if (is_rdd_way) {
+          objInfo.Size = int64(len(objInfo.ETag))
+        }
 	if err_obj != nil {
 		nsUnlocker()
 		return nil, toObjectErr(err_obj, bucket, object)
@@ -209,7 +228,8 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 	//pr, _ := io.Pipe()
 	go func() {
 		//err := xl.getObject(ctx, bucket, object, off, length, pw, "", opts)
-		err := xl.getObjectNoMeta(ctx, bucket, object, off, length, pw, "", opts, metaArr, xlMeta, errs)
+		//err := xl.getObjectNoMeta(ctx, bucket, object, off, length, pw, objInfo.ETag, opts, metaArr, xlMeta, errs, key_slices)
+		err := xl.getObjectNoMeta(ctx, bucket, object, off, length, pw, objInfo.ETag, opts, metaArr, xlMeta, errs, key_slices)
                 //block := make([]byte, length)
                 //_, err := io.Copy(pw, bytes.NewReader(block))
                 
@@ -231,16 +251,24 @@ func (xl xlObjects) GetObjectNInfo(ctx context.Context, bucket, object string, r
 func (xl xlObjects) GetObject(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, etag string, opts ObjectOptions) error {
 	// Lock the object before reading.
         //fmt.Println("!!!! GetObject called ::", bucket, object );
-	objectLock := xl.nsMutex.NewNSLock(bucket, object)
-	if err := objectLock.GetRLock(globalObjectTimeout); err != nil {
+        if !globalNolock_read {
+	  objectLock := xl.nsMutex.NewNSLock(bucket, object)
+	  if err := objectLock.GetRLock(globalObjectTimeout); err != nil {
 		return err
-	}
-	defer objectLock.RUnlock()
+	  }
+	  defer objectLock.RUnlock()
+        }
 	return xl.getObject(ctx, bucket, object, startOffset, length, writer, etag, opts)
 }
 
-func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, etag string, opts ObjectOptions, metaArr []xlMetaV1, xlMeta xlMetaV1, errs []error) error {
+func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, startOffset int64, length int64, writer io.Writer, etag string, opts ObjectOptions, metaArr []xlMetaV1, xlMeta xlMetaV1, errs []error, key_slices []string) error {
         //debug.PrintStack()
+        var is_rdd_way bool = false
+        if ((!globalNoRDD && len(key_slices) == 5)) {
+          is_rdd_way = true
+          //fmt.Println("#### RDD Get request = ", bucket, object, 
+          //             key_slices[0], key_slices[1], key_slices[2], key_slices[3], key_slices[4])
+        }
 
         if err := checkGetObjArgs(ctx, bucket, object); err != nil {
                 return err
@@ -362,39 +390,36 @@ func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, 
           index := int(keyCrc % uint32(len(onlineDisks)))
           disk := onlineDisks[index]
           //fmt.Println(" ### Non EC Read :: ", index, onlineDisks, disk)
-          /*objBuf, err := disk.ReadAll(bucket, object)
-          if err != nil  {
-                if err != errFileNotFound && err != errVolumeNotFound {
-                        logger.GetReqInfo(ctx).AppendTags("disk", disk.String())
-                        logger.LogIf(ctx, err)
-                }
-                fmt.Println("### No EC GET error = ", err, bucket, object)
-                return toObjectErr(err, bucket, object)
-          }
-          if len(objBuf) == 0 {
-                err = errFileNotFound
-                fmt.Println("### No EC zero legth GET error = ", err)
-                return toObjectErr(err, bucket, object)        
-          }
-          _, err = io.Copy(writer, bytes.NewReader(objBuf))
-          if err != nil {
-            // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
-            if err != io.ErrClosedPipe {
-              logger.LogIf(ctx, err)
+          if (is_rdd_way) {
+            remoteAddr,_ := strconv.ParseUint(key_slices[0], 16, 64)
+            remoteValLen,_ := strconv.ParseUint(key_slices[1], 10, 64)
+            //rQhandle,_ := strconv.ParseUint(key_slices[2], 16, 64)
+            rKey,_ := strconv.ParseUint(key_slices[2], 16, 64)
+            //err_rdd := disk.ReadRDDWay(bucket, object, remoteAddr, remoteValLen, uint32(rKey), uint16(rQhandle))
+            err_rdd := disk.ReadRDDWay(bucket, object, remoteAddr, remoteValLen, uint32(rKey), key_slices[3])
+            if (err_rdd != nil) {
+              return toObjectErr(err_rdd, bucket, object)
             }
-            return toObjectErr(err, bucket, object) 
-          }*/
+            _, err_rdd = io.Copy(writer, strings.NewReader(etag))
+            if err_rdd != nil {
+              if err_rdd != io.ErrClosedPipe {
+                logger.LogIf(ctx, err_rdd)
+              }
+              return toObjectErr(err_rdd, bucket, object)
 
-          err := disk.ReadAndCopy(bucket, object, writer)
-          if err != nil {
-            // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
-            if err != io.ErrClosedPipe {
-              logger.LogIf(ctx, err)
-            }
+            }    
+          } else {
 
-            return toObjectErr(err, bucket, object)
-          } 
+            err := disk.ReadAndCopy(bucket, object, writer)
+            if err != nil {
+              // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
+              if err != io.ErrClosedPipe {
+                logger.LogIf(ctx, err)
+              }
 
+              return toObjectErr(err, bucket, object)
+            } 
+          }
         }
         // Return success.
         return nil
@@ -639,11 +664,15 @@ func (xl xlObjects) getObjectInfoDir(ctx context.Context, bucket, object string)
 // GetObjectInfo - reads object metadata and replies back ObjectInfo.
 func (xl xlObjects) GetObjectInfo(ctx context.Context, bucket, object string, opts ObjectOptions) (oi ObjectInfo, e error) {
 	// Lock the object before reading.
-	objectLock := xl.nsMutex.NewNSLock(bucket, object)
-	if err := objectLock.GetRLock(globalObjectTimeout); err != nil {
+        //fmt.Println("###GetObjectInfo::", bucket, object)
+        
+        if !globalNolock_read {
+	  objectLock := xl.nsMutex.NewNSLock(bucket, object)
+	  if err := objectLock.GetRLock(globalObjectTimeout); err != nil {
 		return oi, err
-	}
-	defer objectLock.RUnlock()
+	  }
+	  defer objectLock.RUnlock()
+        }
 
 	if err := checkGetObjArgs(ctx, bucket, object); err != nil {
 		return oi, err
@@ -661,6 +690,7 @@ func (xl xlObjects) GetObjectInfo(ctx context.Context, bucket, object string, op
 
 	info, err := xl.getObjectInfo(ctx, bucket, object)
 	if err != nil {
+                fmt.Println("###getObjectInfo failed !!", err)
 		return oi, toObjectErr(err, bucket, object)
 	}
 
@@ -686,6 +716,7 @@ func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object str
 
           // Pick latest valid metadata.
           xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
+          //fmt.Println("@@@@@@@@@@ xlMeta Read all = ", xlMeta)
           if err != nil {
                 return objInfo, nil, xlMeta, errs, err
           }
@@ -697,6 +728,7 @@ func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object str
           index := int(keyCrc % uint32(len(disks)))
           //fmt.Println("## Index for getting meta = ", index, disks[index])
           xlMeta, err := readXLMeta(ctx, disks[index], bucket, object)
+          //fmt.Println("@@@@@@@@@@ xlMeta = ", xlMeta)
           errs := make([]error, len(disks))
           if err != nil {
             errs[index] = err
@@ -721,6 +753,19 @@ func (xl xlObjects) getObjectInfoVerbose(ctx context.Context, bucket, object str
 
 // getObjectInfo - wrapper for reading object metadata and constructs ObjectInfo.
 func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object string) (objInfo ObjectInfo, err error) {
+        //fmt.Println("## getObjectInfo called = ",bucket, object_key)
+        //debug.PrintStack()
+        //var object string
+        var is_rdd_way bool = false
+        if (!globalNoRDD) {
+          key_slices := strings.Split(object, globalRddSeparator)
+          if (len(key_slices) == 1) {
+            object = key_slices[0]
+          } else {
+            object = key_slices[4]
+            is_rdd_way = true
+          }
+        }
 	disks := xl.getDisks()
 
         if (!globalOptimizedMetaReader) {
@@ -740,6 +785,7 @@ func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object string) (o
 
 	  // Pick latest valid metadata.
 	  xlMeta, err := pickValidXLMeta(ctx, metaArr, modTime, readQuorum)
+          //fmt.Println("@@@@@@@@@@ xlMeta Read all = ", xlMeta)
 	  if err != nil {
 		return objInfo, err
 	  }
@@ -749,8 +795,10 @@ func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object string) (o
 
           keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
           index := int(keyCrc % uint32(len(disks)))
-          //fmt.Println("## Index for getting meta = ", index, disks[index])
+          //fmt.Println("## Index for getting meta = ", index, disks[index], bucket, object)
           xlMeta, err := readXLMeta(ctx, disks[index], bucket, object)
+          //xlMeta.Meta["X-Amz-Meta-Rkey"] = "0x9F56"
+          //fmt.Println("@@@@@@@@@@ xlMeta.meta  = ", xlMeta.Meta, xlMeta.Meta["X-Amz-Meta-Rkey"])
           errs := make([]error, len(disks))
           if err != nil {
             errs[index] = err
@@ -766,8 +814,12 @@ func (xl xlObjects) getObjectInfo(ctx context.Context, bucket, object string) (o
           if err != nil {
                return objInfo, err 
           }
-
+          //objInfo = xlMeta.ToObjectInfo(bucket, object)
+          if (is_rdd_way) {
+            //objInfo.Size = int64(len(objInfo.ETag))
+          }
           return xlMeta.ToObjectInfo(bucket, object), nil
+          //return objInfo, nil
         }
 
 }
@@ -948,8 +1000,14 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 	}
         var onlineDisks []StorageAPI
         var sizeWritten int64
+        var isRDDMetaKey bool = false
 
-        if (!globalNoEC || (data.Size() > globalMaxKVObject)) {
+        //special key if RDD is enabled and client wants to use it
+        if strings.Contains(object, ".dss.rdd.init") {
+          isRDDMetaKey = true
+        }
+
+        if ((!isRDDMetaKey) && (!globalNoEC || (data.Size() > globalMaxKVObject))) {
 
 	  // Order disks according to erasure distribution
 	  onlineDisks = shuffleDisks(xl.getDisks(), partsMetadata[0].Erasure.Distribution)
@@ -1090,20 +1148,84 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
             logger.LogIf(ctx, err)
             return ObjectInfo{}, toObjectErr(err, bucket, object) 
           }
+          
+          if (isRDDMetaKey) {
+            //Its a special put for saving RDD connection handles, 
+            //key_format = <client_id>.dss.rdd.init, value_format = <ip-port>::<QHandle>##<ip-port>::<QHandle>##..
 
-          disks := xl.getDisks()
-          keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
-          index := int(keyCrc % uint32(len(disks)))
-          onlineDisks = make([]StorageAPI, 1)
-          onlineDisks[0] = disks[index]
-          //fmt.Println(" ### Non EC write :: ", n, index, onlineDisks, len(onlineDisks))
-          err = disks[index].WriteAll(bucket, object, buffer[:n])
-          if err != nil {
-            logger.LogIf(ctx, err) 
-            return ObjectInfo{}, toObjectErr(err, bucket, object)
+            fmt.Println("RDD connection PUT, key = ", object)
+            obj_slices := strings.Split(object, ".")
+            //remote_client_id, _ := strconv.ParseUint(obj_slices[0], 16, 64)
+            str_buffer := string(buffer[:])
+            fmt.Println("RDD connection PUT, value = ", str_buffer)
+            key_slices := strings.Split(str_buffer, "##")
+            fmt.Println("RDD connection PUT, key_slices = ", key_slices)
+            disks := xl.getDisks()
+            //if (len(disks) > len(key_slices)) {
+            if (false) {
+              fmt.Println("Invalid number of RDD Connection handle passed", len(disks), len(key_slices))
+              gIsRDDQHandleSet = false
+              err = errors.New("Invalid RDD param")
+              return ObjectInfo{}, toObjectErr(err, bucket, object)
+           
+            }
+            var num_update int = 0
+            for i := 0; i < len(key_slices); i++ {
+              if (key_slices[i] == "END") {
+                fmt.Println("Done, no more rdd params")
+                break;
+              }
+              rdd_params := strings.Split(key_slices[i], "::")
+              fmt.Println("rdd param format", rdd_params)
+              if (len(rdd_params) != 2) {
+                fmt.Println("Invalid rdd param format", rdd_params)
+                gIsRDDQHandleSet = false
+                err = errors.New("Invalid RDD param")
+                return ObjectInfo{}, toObjectErr(err, bucket, object)
+              } else {
+                for index := 0; index < len(disks); index++ {
+                  rQhandle,_ := strconv.ParseUint(rdd_params[1], 10, 64)
+                  nqn_ip_port := string(rdd_params[0])
+                  nqn_ip_port = strings.TrimRight(nqn_ip_port, string(0))
+                  fmt.Println("##nqn_ip_port == ", []byte(nqn_ip_port))
+                  //err = disks[index].AddRDDParam(obj_slices[0], rdd_params[0], uint16(rQhandle))
+                  err = disks[index].AddRDDParam(obj_slices[0], nqn_ip_port, uint16(rQhandle))
+                  if err == nil {
+                    num_update++
+                    //break;
+                  }
+                  
+                }
+              }
+            }
+            if (num_update == 0) {
+              fmt.Println("RDD NQN Id passed is not matching with disk NQNs, can't enable RDD transfer. ")
+              gIsRDDQHandleSet = false
+              err = errors.New("Invalid RDD param")
+              return ObjectInfo{}, toObjectErr(err, bucket, object)
+              
+            }
+
+            if (num_update != len(disks)) {
+              fmt.Println("WARNING: RDD Connection handle is not set for all the disks: ", len(disks), num_update)              
+            }
+            gIsRDDQHandleSet = true
+            return ObjectInfo{}, nil  
+          } else {
+            disks := xl.getDisks()
+            keyCrc := crc32.Checksum([]byte(object), crc32.IEEETable)
+            index := int(keyCrc % uint32(len(disks)))
+            onlineDisks = make([]StorageAPI, 1)
+            onlineDisks[0] = disks[index]
+            //fmt.Println(" ### Non EC write :: ", n, index, onlineDisks, len(onlineDisks))
+            err = disks[index].WriteAll(bucket, object, buffer[:n])
+            if err != nil {
+              logger.LogIf(ctx, err) 
+              return ObjectInfo{}, toObjectErr(err, bucket, object)
+            }
+            sizeWritten = int64 (n)
+            writeQuorum = 1
           }
-          sizeWritten = int64 (n)
-          writeQuorum = 1
         }
 	// Save additional erasureMetadata.
 	modTime := UTCNow()
