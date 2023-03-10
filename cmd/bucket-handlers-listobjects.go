@@ -19,7 +19,7 @@ package cmd
 import (
 	"net/http"
 	"strings"
-        "fmt"
+        //"fmt"
 	"github.com/gorilla/mux"
 	"github.com/minio/minio/cmd/crypto"
 	"github.com/minio/minio/cmd/logger"
@@ -91,7 +91,7 @@ func (api objectAPIHandlers) ListObjectsV2Handler(w http.ResponseWriter, r *http
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(errCode), r.URL, guessIsBrowserReq(r))
 		return
 	}
-        fmt.Println("$$ ListObject V2 called = ", bucket, prefix)
+        //fmt.Println("$$ ListObject V2 called = ", bucket, prefix)
 	// Validate the query params before beginning to serve the request.
 	// fetch-owner is not validated since it is a boolean
 	if s3Error := validateListObjectsArgs(prefix, token, delimiter, encodingType, maxKeys); s3Error != ErrNone {
@@ -171,15 +171,15 @@ func (api objectAPIHandlers) ListObjectsV1Handler(w http.ResponseWriter, r *http
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
 		return
 	}
-        var org_prefix string = prefix
-        key_slices := strings.Split(prefix, globalRddSeparator)
-        if (len(key_slices) == 1) {
-          prefix = key_slices[0]
-        } else {
-          prefix = key_slices[3]
-        }
+        //var org_prefix string = prefix
+        //key_slices := strings.Split(prefix, globalRddSeparator)
+        //if (len(key_slices) == 1) {
+          //prefix = key_slices[0]
+        //} else {
+          //prefix = key_slices[3]
+        //}
 
-        fmt.Println("$$$$ ListObject V1 called = ", bucket, prefix)
+        //fmt.Println("$$$$ ListObject V1 called = ", bucket, prefix)
 	// Validate all the query params before beginning to serve the request.
 	if s3Error := validateListObjectsArgs(prefix, marker, delimiter, encodingType, maxKeys); s3Error != ErrNone {
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
@@ -195,7 +195,7 @@ func (api objectAPIHandlers) ListObjectsV1Handler(w http.ResponseWriter, r *http
 	// On success would return back ListObjectsInfo object to be
 	// marshaled into S3 compatible XML header.
 	listObjectsInfo, err := listObjects(ctx, bucket, prefix, marker, delimiter, maxKeys)
-        fmt.Println("$$$$ listObjectsInfo, err = ", listObjectsInfo, err)
+        //fmt.Println("$$$$ listObjectsInfo, err = ", listObjectsInfo, err)
 	if err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
@@ -221,9 +221,9 @@ func (api objectAPIHandlers) ListObjectsV1Handler(w http.ResponseWriter, r *http
 			}
 		}
 	}
-        fmt.Println("$$$$ org_prefix = ", org_prefix)
-	response := generateListObjectsV1Response(bucket, org_prefix, marker, delimiter, encodingType, maxKeys, listObjectsInfo)
-        fmt.Println("$$$$ list response = ", response)
+        //fmt.Println("$$$$ org_prefix = ", org_prefix)
+	response := generateListObjectsV1Response(bucket, prefix, marker, delimiter, encodingType, maxKeys, listObjectsInfo)
+        //fmt.Println("$$$$ list response = ", response)
     	// Write success response.
 	writeSuccessResponseXML(w, encodeResponse(response))
 }
