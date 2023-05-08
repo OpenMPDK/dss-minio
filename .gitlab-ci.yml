@@ -13,7 +13,6 @@ image:
   name: dss-build_$BRANCH_NAME
 
 stages:
-  - scan
   - build
 
 build minio:
