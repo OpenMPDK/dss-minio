@@ -23,6 +23,7 @@ build minio:
     - ./build.sh
     - /stagemergeartifacts.sh
   variables:
+    GIT_STRATEGY: clone
     GIT_DEPTH: 0
     DSSGLOBLIST: "dss-minio-bin-*.tgz"
   artifacts:
