@@ -1,6 +1,6 @@
 variables:
   BRANCH_NAME: $CI_COMMIT_BRANCH
-  GIT_DEPTH: 0
+  GIT_STRATEGY: clone
 
 workflow:
   rules:
