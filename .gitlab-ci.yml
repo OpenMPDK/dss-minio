@@ -1,8 +1,5 @@
 variables:
   BRANCH_NAME: $CI_COMMIT_BRANCH
-  GIT_STRATEGY: clone
-  GIT_DEPTH: "3"
-  GIT_SUBMODULE_STRATEGY: recursive
 
 workflow:
   rules:
@@ -26,6 +23,9 @@ build minio:
     - ./build.sh
     - /stagemergeartifacts.sh
   variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: "3"
+    GIT_SUBMODULE_STRATEGY: recursive
     DSSGLOBLIST: "dss-minio-bin-*.tgz"
   artifacts:
     paths:
