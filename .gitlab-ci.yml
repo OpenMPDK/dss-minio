@@ -1,0 +1,30 @@
+variables:
+  BRANCH_NAME: $CI_COMMIT_BRANCH
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        BRANCH_NAME: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    - if: $CI_COMMIT_BRANCH == "master" && $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_COMMIT_BRANCH =~ /^(stable|feature)\/.*/ && $CI_PIPELINE_SOURCE == "push"
+
+image:
+  name: dss-build_$BRANCH_NAME
+
+stages:
+  - build
+
+build minio:
+  stage: build
+  script:
+    - /getminiodeps.sh
+    - ./build.sh
+    - /stagemergeartifacts.sh
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+    DSSGLOBLIST: "dss-minio-bin-*.tgz"
+  artifacts:
+    paths:
+      - dss-minio-bin-*.tgz
