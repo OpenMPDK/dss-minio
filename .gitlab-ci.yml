@@ -18,7 +18,7 @@ stages:
 build minio:
   stage: build
   script:
-    - /getminiodeps.sh
+    - ./getminiodeps.sh
     - ./build.sh
     - /stagemergeartifacts.sh
   variables:
