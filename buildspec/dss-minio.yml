@@ -16,7 +16,7 @@ phases:
           -Dsonar.pullrequest.key=$(echo $GITHUB_REF | grep -oP "^refs/pull/\K[^/]+") \
           -Dsonar.pullrequest.base=${GITHUB_BASE_REF} \
           -Dsonar.pullrequest.branch=${GITHUB_HEAD_REF} \
-      - /getminiodeps.sh
+      - ./getminiodeps.sh
   build:
     commands:
       - ./build.sh
