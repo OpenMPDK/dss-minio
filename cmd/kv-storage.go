@@ -1252,9 +1252,9 @@ func (k *KVStorage) DeleteFile(volume string, path string) (err error) {
         var is_meta bool = true
 
         if (globalMetaOptNoStat) {
-          if strings.HasSuffix(nskey, xlMetaJSONFile) || strings.HasSuffix(nskey, "part.1") ||  strings.Contains(nskey, ".minio.sys") {
+          if strings.HasSuffix(nskey, xlMetaJSONFile) || strings.Contains(nskey, "part.") ||  strings.Contains(nskey, ".minio.sys") {
 
-            if (strings.HasSuffix(nskey, "part.1")) {
+            if (strings.Contains(nskey, "part.")) {
               bufp = kvValuePool.Get().(*[]byte)
               defer kvValuePool.Put(bufp)
             } else {
