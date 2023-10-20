@@ -546,6 +546,7 @@ func (s *xlSets) StorageInfo(ctx context.Context) StorageInfo {
 	storageInfo.Backend.Type = BackendErasure
 	for _, set := range s.sets {
 		lstorageInfo := set.StorageInfo(ctx)
+		storageInfo.Total = storageInfo.Total + lstorageInfo.Total
 		storageInfo.Used = storageInfo.Used + lstorageInfo.Used
 		storageInfo.Backend.OnlineDisks = storageInfo.Backend.OnlineDisks + lstorageInfo.Backend.OnlineDisks
 		storageInfo.Backend.OfflineDisks = storageInfo.Backend.OfflineDisks + lstorageInfo.Backend.OfflineDisks

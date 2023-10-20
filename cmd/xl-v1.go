@@ -121,7 +121,9 @@ func getStorageInfo(disks []StorageAPI) StorageInfo {
 
 	// Combine all disks to get total usage.
 	var used uint64
+	var total uint64
 	for _, di := range validDisksInfo {
+		total = total + di.Total
 		used = used + di.Used
 	}
 
@@ -130,6 +132,7 @@ func getStorageInfo(disks []StorageAPI) StorageInfo {
 
 	storageInfo := StorageInfo{
 		Used: used,
+		Total: total,
 	}
 	storageInfo.Backend.Type = BackendErasure
 	storageInfo.Backend.OnlineDisks = onlineDisks
