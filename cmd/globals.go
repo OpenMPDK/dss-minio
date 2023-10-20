@@ -295,6 +295,9 @@ var (
 	GlobalGatewaySSE gatewaySSE
 
 	// Add new variable global values here.
+	clusterID string
+	clusterIDBucket = "dss"
+	clusterIDFilePath = "minio_cluster_id"
 )
 
 // global colors.
