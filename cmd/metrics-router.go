@@ -17,6 +17,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -25,6 +26,7 @@ import (
 const (
 	prometheusMetricsPath = "/prometheus/metrics"
 	kvMetricsPath         = "/kvstats"
+	clusterIDPath         = "/cluster_id"
 )
 
 // registerMetricsRouter - add handler functions for metrics.
@@ -37,5 +39,18 @@ func registerMetricsRouter(router *mux.Router) {
 		globalDumpKVStatsCh <- c
 		b := <-c
 		w.Write(b)
+	})
+	metricsRouter.Methods(http.MethodGet).Path(clusterIDPath).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := struct {
+			UUID string
+		}{
+			UUID: clusterID,
+		}
+		b, err := json.Marshal(c)
+		if err != nil {
+			w.Write([]byte("Error occured when encoding clusterID"))
+		} else {
+			w.Write(b)
+		}
 	})
 }
