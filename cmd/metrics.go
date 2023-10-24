@@ -142,6 +142,16 @@ func (c *minioCollector) Collect(ch chan<- prometheus.Metric) {
 		float64(s.Used),
 	)
 
+	// Total disk capacity by this Minio instance
+	ch <- prometheus.MustNewConstMetric(
+		prometheus.NewDesc(
+			prometheus.BuildFQName("minio", "disk", "storage_total_capacity_bytes"),
+			"Total disk storage capacity by current Minio server instance",
+			nil, nil),
+		prometheus.GaugeValue,
+		float64(s.Total),
+	)
+
 	// Minio Total Disk/Offline Disk
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc(

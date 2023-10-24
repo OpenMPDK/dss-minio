@@ -28,6 +28,9 @@ import (
 	"time"
         "os"
         "strconv"
+	"crypto/sha1"
+	"encoding/hex"
+	"bytes"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/bpool"
 	"github.com/minio/minio/pkg/madmin"
@@ -380,6 +383,173 @@ func (s *xlSets) syncSharedVols() {
   	}
 }
 
+func generateUUID(data []byte) string {
+	hash := sha1.New()
+	// namespaceUUID as defined by UUID RFC 
+	namespaceURL := []byte{107, 167, 184, 17, 157, 173, 17, 209, 128, 180, 0, 192, 79, 212, 48, 200}
+	hash.Write(namespaceURL)
+	hash.Write(data)
+	sum := hash.Sum(nil)
+	ver := 5 	// UUID version 5 (sha1 hash)
+	// change bytes to show proper UUID info
+	sum[6] = (sum[6] & 0x0f) | uint8((ver&0xf)<<4)
+	sum[8] = (sum[8] & 0x3f) | 0x80
+
+	var buf [36]byte
+	uuid := buf[:]
+
+	// add hyphen formatting
+	hex.Encode(uuid, sum[:4])
+	uuid[8] = '-'
+	hex.Encode(uuid[9:13], sum[4:6])
+	uuid[13] = '-'
+	hex.Encode(uuid[14:18], sum[6:8])
+	uuid[18] = '-'
+	hex.Encode(uuid[19:23], sum[8:10])
+	uuid[23] = '-'
+	hex.Encode(uuid[24:], sum[10:16])
+
+	return string(uuid)
+}
+
+// Write clusterID to all disks, if too many fail then error out
+func writeClusterIDWithQuorum(disks []StorageAPI) error {
+	dataDrives, _ := getRedundancyCount(standardStorageClass, len(disks))
+	writeQuorum := dataDrives
+	var mErrs = make([]error, len(disks))
+	for index, disk := range disks {
+		if disk == nil {
+			mErrs[index] = errDiskNotFound
+			continue
+		}
+
+		if err := disk.WriteAll(clusterIDBucket, clusterIDFilePath, []byte(clusterID)); err != nil {
+			mErrs[index] = err
+		}
+	}
+	// Check how many errors, success if error is nil for >= quorum
+	maxCount, maxErr := reduceErrs(mErrs, objectOpIgnoredErrs)
+	if maxCount < writeQuorum {
+		return errXLWriteQuorum	
+	}
+	if maxErr != nil {
+		return maxErr
+	}
+	return nil
+}
+
+// Check if stored data matches, throw an error if not enough matches
+// Only checking the data, don't have to worry about errors since that is
+// already checked
+func getClusterIDInQuorum(uuids []string, readQuorum int) (string, error) {
+	uuidCount := make(map[string]int)
+	for _, uuid := range uuids {
+		if uuid == "" {
+			continue
+		}
+		uuidCount[uuid]++
+	}
+
+	maxID := ""
+	maxCount := 0
+	for uuid, count := range uuidCount {
+		if count > maxCount {
+			maxCount = count
+			maxID = uuid
+		}
+	}
+	// If the amount of a stored UUID is >= quorum, success
+	if maxCount < readQuorum {
+		return "", errXLReadQuorum
+	}
+	return maxID, nil
+}
+
+// Attempt to read the clusterID from disks in a set
+// Use half the disks as quorum since we are just writing to all disks
+// Throws an error if either enough reads fail or if stored UUIDs don't match
+func readClusterIDWithQuorum(disks []StorageAPI) (string, error) {
+	readQuorum := len(disks) / 2
+
+	var mErrs = make([]error, len(disks))
+	var uuids = make([]string, len(disks))
+	for index, disk := range disks {
+		if disk == nil {
+			mErrs[index] = errDiskNotFound
+			continue
+		}
+		buf, err := disk.ReadAll(clusterIDBucket, clusterIDFilePath)
+		if err != nil {
+			mErrs[index] = err
+			continue
+		}
+		buf = bytes.Trim(buf, "\x00")
+		uuids[index] = string(buf)
+	}
+
+	// Check if enough reads succeeded
+	maxCount, maxErr := reduceErrs(mErrs, objectOpIgnoredErrs)
+	if maxCount < readQuorum {
+		return "", errXLReadQuorum
+	}
+	if maxErr != nil {
+		return "", maxErr
+	}
+	
+	fmt.Println("Read err quorum succeeded, see if there is usable clusterID")
+	// Check if UUIDs match between disks, throw error if quorum not met
+	return getClusterIDInQuorum(uuids, readQuorum)
+}
+
+func (s *xlSets) assignClusterID() (err error) {
+	// Attempt to read with quorum, if read fails then we can write
+	// If we find a clusterID in one of the sets, then use it
+	var uuid string
+	for _, set := range s.sets {
+		lock := set.nsMutex.NewNSLock(clusterIDBucket, clusterIDFilePath)
+		err = lock.GetRLock(globalObjectTimeout)
+		defer lock.RUnlock()
+		if err != nil {
+			fmt.Println("UUID write GetRLock timed out")
+			return err
+		}
+		// attempt to read with quorum
+		uuid, err = readClusterIDWithQuorum(set.getDisks())
+		if err == nil {
+			clusterID = uuid
+			fmt.Println("Found stored UUID, using it:", clusterID)
+			return err
+		}
+		
+	}
+	// if read w/ quorum fails, we should try to write the data next
+	fmt.Println("### UUID read failed, attempt to write new UUID now. Error: ", err)
+	// generate UUID from IPs/devices given in args and write to all disks
+	hostnamesString := ""
+	for _, endpoint := range globalEndpoints {
+		hostnamesString = hostnamesString + endpoint.String()
+	}
+	clusterID = generateUUID([]byte(hostnamesString))
+	for _, set := range s.sets {
+		set.nsMutex.ForceUnlock(clusterIDBucket, clusterIDFilePath)
+		lock := set.nsMutex.NewNSLock(clusterIDBucket, clusterIDFilePath)
+		err = lock.GetLock(globalObjectTimeout)
+		defer lock.Unlock()
+		if err != nil {
+			fmt.Println("UUID write GetLock timed out")
+			return err
+		}
+		// if error is not nil, then we should bail out
+		err = writeClusterIDWithQuorum(set.getDisks())
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Println("### Successfully wrote ClusterID: ", clusterID)
+
+	return err
+}
+
 const defaultMonitorConnectEndpointInterval = time.Second * 10 // Set to 10 secs.
 
 // Initialize new set of erasure coded sets.
@@ -420,6 +590,13 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
 
 	// Start the disk monitoring and connect routine.
 	go s.monitorAndConnectEndpoints(defaultMonitorConnectEndpointInterval)
+
+	err := s.assignClusterID()
+	if err != nil {
+		fmt.Println("Unable to write ClusterID:", err)
+		// Error out if we can't assign ClusterID, unable to write ClusterID
+		return nil, err
+	}
 
         if (customECpoolObjSize == 0) {
           scData, _ := getRedundancyCount(standardStorageClass, s.drivesPerSet)
@@ -571,6 +748,7 @@ func (s *xlSets) StorageInfo(ctx context.Context) StorageInfo {
 	storageInfo.Backend.Type = BackendErasure
 	for _, set := range s.sets {
 		lstorageInfo := set.StorageInfo(ctx)
+		storageInfo.Total = storageInfo.Total + lstorageInfo.Total
 		storageInfo.Used = storageInfo.Used + lstorageInfo.Used
 		storageInfo.Backend.OnlineDisks = storageInfo.Backend.OnlineDisks + lstorageInfo.Backend.OnlineDisks
 		storageInfo.Backend.OfflineDisks = storageInfo.Backend.OfflineDisks + lstorageInfo.Backend.OfflineDisks
