@@ -410,7 +410,7 @@ func (xl xlObjects) getObjectNoMeta(ctx context.Context, bucket, object string, 
             }    
           } else {
 
-            err := disk.ReadAndCopy(bucket, object, writer)
+            err := disk.ReadAndCopy(bucket, object, writer, length)
             if err != nil {
               // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
               if err != io.ErrClosedPipe {
@@ -606,7 +606,7 @@ func (xl xlObjects) getObject(ctx context.Context, bucket, object string, startO
           index := int(keyCrc % uint32(len(disks)))
           disk := disks[index]
           //fmt.Println(" ### getObject::Non EC Read :: ", index, onlineDisks, disks, disk, bucket, object)
-          err := disk.ReadAndCopy(bucket, object, writer)
+          err := disk.ReadAndCopy(bucket, object, writer, length)
           if err != nil {
             // The writer will be closed incase of range queries, which will emit ErrClosedPipe.
             if err != io.ErrClosedPipe {
@@ -1131,16 +1131,16 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 		}
 	  }
         } else {
+          var buff_size int64 = data.Size()
           var buffer []byte
-          switch size := data.Size(); {
-          case size == 0:
-                buffer = make([]byte, 1) // Allocate atleast a byte to reach EOF
-          case size == -1 || size >= blockSizeV1:
-                buffer = xl.bp.Get()
-                defer xl.bp.Put(buffer)
-          case size < blockSizeV1:
-                // No need to allocate fully blockSizeV1 buffer if the incoming data is smaller.
-                buffer = make([]byte, size, 2*size)
+          if (!globalDontUseRepMemPool) {
+            buffer = poolAllocRep(buff_size)
+          } else {
+            if (buff_size == 0) {
+              buffer = make([]byte, 1)
+            } else {
+              buffer = make([]byte, buff_size)
+            }
           }
 
           n, err := io.ReadFull(reader, buffer)
@@ -1217,8 +1217,11 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
             index := int(keyCrc % uint32(len(disks)))
             onlineDisks = make([]StorageAPI, 1)
             onlineDisks[0] = disks[index]
-            //fmt.Println(" ### Non EC write :: ", n, index, onlineDisks, len(onlineDisks))
+            //fmt.Println(" ### Non EC write :: ", n, len(buffer), index, onlineDisks, len(onlineDisks))
             err = disks[index].WriteAll(bucket, object, buffer[:n])
+            if (!globalDontUseRepMemPool) {
+              poolDeAllocRep(buffer, buff_size)
+            }
             if err != nil {
               logger.LogIf(ctx, err) 
               return ObjectInfo{}, toObjectErr(err, bucket, object)

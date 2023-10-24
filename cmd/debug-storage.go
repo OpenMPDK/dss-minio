@@ -188,8 +188,8 @@ func (d *debugStorage) UpdateStats () error {
   return err
 }
 
-func (d *debugStorage) ReadAndCopy(volume string, filePath string, writer io.Writer) (err error) {
-        err = d.s.ReadAndCopy(volume, filePath, writer)
+func (d *debugStorage) ReadAndCopy(volume string, filePath string, writer io.Writer, sizehint int64) (err error) {
+        err = d.s.ReadAndCopy(volume, filePath, writer, sizehint)
         if d.enable {
                 fmt.Printf("%s: ReadAndCopy(%s, %s) (%s)\n", d.path, volume, filePath, errStr(err))
         }

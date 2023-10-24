@@ -73,6 +73,125 @@ func (k *kvMetaPoolECPoolType) PrintCount() {
        fmt.Println("## EC-Meta-Pool count", k.count)
 }
 
+// Pools used in Replication path..
+
+type kvMinSizePoolRepPoolType struct {
+       *sync.Pool
+}
+
+func (k *kvMinSizePoolRepPoolType) Get() interface{} {
+       return k.Pool.Get()
+}
+
+func (k *kvMinSizePoolRepPoolType) Put(x interface{}) {
+       //fmt.Println("## EC-Pool Put called, ", k.count)
+       k.Pool.Put(x)
+}
+
+
+type kvMidSizePoolRepPoolType struct {
+       *sync.Pool
+}
+
+func (k *kvMidSizePoolRepPoolType) Get() interface{} {
+       return k.Pool.Get()
+}
+
+func (k *kvMidSizePoolRepPoolType) Put(x interface{}) {
+       //fmt.Println("## EC-Pool Put called, ", k.count)
+       k.Pool.Put(x)
+}
+
+
+type kvMaxSizePoolRepPoolType struct {
+       *sync.Pool
+}
+
+func (k *kvMaxSizePoolRepPoolType) Get() interface{} {
+       return k.Pool.Get()
+}
+
+func (k *kvMaxSizePoolRepPoolType) Put(x interface{}) {
+       k.Pool.Put(x)
+}
+
+var kvMinPoolRep *kvMinSizePoolRepPoolType = nil
+var kvMidPoolRep *kvMidSizePoolRepPoolType = nil
+var kvMaxPoolRep *kvMaxSizePoolRepPoolType = nil
+var midSize int64 = 0
+var minSize int64 = 0
+
+func initRepPool(divFactor int) {
+
+  fmt.Println("### Creating Max Rep Pool with object size = ", globalMaxKVObject)
+  kvMaxPoolRep = &kvMaxSizePoolRepPoolType{
+       Pool: &sync.Pool{
+               New: func() interface{} {
+                       b := make([]byte, globalMaxKVObject)
+                       return b
+               },
+        },
+  }
+
+  midSize = globalMaxKVObject/int64 (divFactor)
+  for (midSize <= 131072) {
+    midSize = (2 * globalMaxKVObject)/int64 (divFactor)
+  }
+  fmt.Println("### Creating Mid Rep Pool with object size = ", midSize )
+  kvMidPoolRep = &kvMidSizePoolRepPoolType{
+       Pool: &sync.Pool{
+               New: func() interface{} {
+                       b := make([]byte, midSize)
+                       return b
+               },
+        },
+  }
+
+  divFactor = 2 * divFactor
+  minSize = globalMaxKVObject/int64 (divFactor)
+  for (minSize <= 32768) {
+    midSize = (2 * globalMaxKVObject)/int64 (divFactor)
+  }
+  fmt.Println("### Creating Min Rep Pool with object size = ", minSize )
+  kvMinPoolRep = &kvMinSizePoolRepPoolType{
+       Pool: &sync.Pool{
+               New: func() interface{} {
+                       b := make([]byte, minSize)
+                       return b
+               },
+        },
+  }
+
+
+
+}
+
+func  poolAllocRep(size int64) []byte {
+  if (size <= minSize) {
+    return kvMinPoolRep.Get().([]byte)
+  } else if ((size > minSize) && (size <= midSize)) {
+    return kvMidPoolRep.Get().([]byte)
+  } else {
+    return kvMaxPoolRep.Get().([]byte)
+  }
+  
+}
+
+func  poolDeAllocRep(buffer []byte, size int64) {
+  if (size <= minSize) {
+    kvMinPoolRep.Put(buffer)
+  } else if ((size > minSize) && (size <= midSize)) {
+    kvMidPoolRep.Put(buffer)
+  } else {
+    kvMaxPoolRep.Put(buffer)
+  }
+
+}
+
+
+
+
+// End Rep pool
 
 var kvPoolEC *kvPoolECPoolType = nil
 var kvMetaPoolEC *kvMetaPoolECPoolType = nil

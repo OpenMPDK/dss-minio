@@ -174,6 +174,7 @@ var (
         globalNotransaction_write bool 
         globalDo_Write_Opt bool
         globalDontUseECMemPool bool 
+        globalDontUseRepMemPool bool 
         globalZeroCopyReader bool 
         globalOptimizedMetaReader bool 
         globalMetaOptNoStat bool 
