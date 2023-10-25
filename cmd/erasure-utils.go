@@ -150,7 +150,7 @@ func initRepPool(divFactor int) {
   divFactor = 2 * divFactor
   minSize = globalMaxKVObject/int64 (divFactor)
   for (minSize <= 32768) {
-    midSize = (2 * globalMaxKVObject)/int64 (divFactor)
+    minSize = (2 * globalMaxKVObject)/int64 (divFactor)
   }
   fmt.Println("### Creating Min Rep Pool with object size = ", minSize )
   kvMinPoolRep = &kvMinSizePoolRepPoolType{
