@@ -364,9 +364,9 @@ var kvPadding bool = os.Getenv("MINIO_NKV_PADDING") != "off"
 var kvMaxValueSize = getKVMaxValueSize()
 
 func getKVMaxValueSize() int {
-	str := os.Getenv("MINIO_NKV_MAX_VALUE_SIZE")
+	str := os.Getenv("MINIO_NKV_MAX_VALUE_SIZE_WITHOUT_RDD")
 	if str == "" {
-		return 2 * 1024 * 1024
+		return 1 * 1024 * 1024
 	}
 	valSize, err := strconv.Atoi(str)
 	logger.FatalIf(err, "parsing MINIO_NKV_MAX_VALUE_SIZE")
@@ -725,7 +725,7 @@ func (k *KV) Put(keyStr string, value []byte) error {
         size := len(value)
 
         if (!globalNoEC || (size > int (globalMaxKVObject))) {
-          max_supported_size = kvMaxValueSize
+          max_supported_size = kvMaxValueSize 
         }
 	if len(value) > max_supported_size {
                 fmt.Println("##### invalid value length during PUT", keyStr, len(value), max_supported_size)
@@ -822,7 +822,7 @@ func (k *KV) Get(keyStr string, value []byte) ([]byte, error) {
         size := len(value)
 
         if (!globalNoEC || (size > int (globalMaxKVObject))) {
-          max_supported_size = kvMaxValueSize
+          max_supported_size = kvMaxValueSize 
         }
         if len(value) > max_supported_size {
                 fmt.Println("##### invalid value length during GET", keyStr, len(value), max_supported_size)
