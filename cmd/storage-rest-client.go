@@ -392,7 +392,7 @@ func (client *storageRESTClient) UpdateStats() error {
   return nil
 }
 
-func (client *storageRESTClient) ReadAndCopy(volume string, filePath string, writer io.Writer) (err error) {
+func (client *storageRESTClient) ReadAndCopy(volume string, filePath string, writer io.Writer, sizehint int64) (err error) {
 
   return nil
 }

@@ -57,7 +57,7 @@ type StorageAPI interface {
 
 	// Read all.
 	ReadAll(volume string, path string) (buf []byte, err error)
-	ReadAndCopy(volume string, path string, writer io.Writer) (err error)
+	ReadAndCopy(volume string, path string, writer io.Writer, sizehint int64) (err error)
         ReadRDDWay(volume string, filePath string, remoteAddress uint64, valueLen uint64, rKey uint32, remoteClientId string) (err error)
         AddRDDParam(remoteClientId string, NQNId string, rQhandle uint16) (err error)
 }

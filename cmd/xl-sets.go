@@ -734,6 +734,31 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
         fmt.Printf("### RDD Key separator  = %s\n", globalRddSeparator)
 
         globalDummy_read = -1
+
+        globalDontUseRepMemPool = false
+        if os.Getenv("MINIO_DONT_USE_REP_MEM_POOL") != "" {
+          fmt.Println("### Setting up *not to* use Rep mem-pool.. ###")
+          globalDontUseRepMemPool = true
+        }
+
+        if (!globalDontUseRepMemPool) {
+          var divFactor int64
+          fmt.Println("### Setting up to *use* Rep mem-pool.. ###")
+          if v := os.Getenv("MINIO_REP_MEM_POOL_DIV_FACTOR"); v != "" {
+            var err error
+            divFactor, err = strconv.ParseInt(v, 10, 64)
+            if err != nil {
+              fmt.Printf("### Wrong value of MINIO_REP_MEM_POOL_DIV_FACTOR = %s\n", v)
+              divFactor = 4
+            }
+          } else {
+            divFactor = 4
+          }
+          fmt.Println("### Div Factor passed = ###", divFactor)
+
+          initRepPool(int (divFactor))
+        }
+
        
 	return s, nil
 }

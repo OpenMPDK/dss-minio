@@ -1345,10 +1345,12 @@ func (k *KVStorage) WriteAll(volume string, filePath string, buf []byte) (err er
         return nil
 }
 
-func (k *KVStorage) ReadAndCopy(volume string, filePath string, writer io.Writer) (err error) {
+func (k *KVStorage) ReadAndCopy(volume string, filePath string, writer io.Writer, sizehint int64) (err error) {
 
         var is_meta bool = false
-        var bufp *[]byte = nil
+        var buf []byte
+        var err_kv error
+
         nskey := pathJoin(volume, filePath)
         if strings.HasSuffix(nskey, xlMetaJSONFile) || strings.Contains(nskey, ".minio.sys") {
           is_meta = true
@@ -1356,17 +1358,22 @@ func (k *KVStorage) ReadAndCopy(volume string, filePath string, writer io.Writer
           nskey = k.DataKey(nskey)
         }
         if is_meta || strings.Contains(nskey, ".minio.sys") {
-          bufp = kvValuePoolMeta.Get().(*[]byte)
+          bufp := kvValuePoolMeta.Get().(*[]byte)
           defer kvValuePoolMeta.Put(bufp)
+          buf, err_kv = k.kv.Get(nskey, *bufp)
+          if err_kv != nil {
+            return err_kv
+          }
+
         } else {
-          //bufp = kvValuePool.Get().(*[]byte)
-          //defer kvValuePool.Put(bufp)
-          bufp = kvValuePoolNoEC.Get().(*[]byte)
-          defer kvValuePoolNoEC.Put(bufp)
-        }
-        buf, err_kv := k.kv.Get(nskey, *bufp)
-        if err_kv != nil {
-          return err_kv
+          var buffer []byte
+          buffer = poolAllocRep(sizehint)
+          defer poolDeAllocRep(buffer, sizehint)
+          buf, err_kv = k.kv.Get(nskey, buffer)
+          if err_kv != nil {
+            return err_kv
+          }
+          
         }
 
         _, err = io.Copy(writer, bytes.NewReader(buf))
