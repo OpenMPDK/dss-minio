@@ -19,6 +19,7 @@ package cmd
 import (
 	"context"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/minio/minio/cmd/logger"
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,9 +37,11 @@ var (
 	)
 )
 
+// Commented out this collector registration since Prometheus is running collect twice
+// Couldn't see any difference in functionality
 func init() {
 	prometheus.MustRegister(httpRequestsDuration)
-	prometheus.MustRegister(newMinioCollector())
+	//prometheus.MustRegister(newMinioCollector())
 }
 
 // newMinioCollector describes the collector
@@ -64,6 +67,30 @@ func (c *minioCollector) Describe(ch chan<- *prometheus.Desc) {
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *minioCollector) Collect(ch chan<- prometheus.Metric) {
 
+	globalMetricsChan<- 1
+	// Waiting to make sure metrics thread finishes before
+	<-globalMetricsChan
+	ch <- prometheus.MustNewConstMetric(
+		prometheus.NewDesc(
+			prometheus.BuildFQName("minio", "metrics", "iops"),
+			"Current IOPS of this Minio instance",
+			nil, nil),
+		prometheus.CounterValue,
+		float64(atomic.LoadUint64(&globalCurrIOCount)),
+	)
+
+	ch <- prometheus.MustNewConstMetric(
+		prometheus.NewDesc(
+			prometheus.BuildFQName("minio", "metrics", "bw"),
+			"Current BW of this Minio instance (KiB/s)",
+			nil, nil),
+		prometheus.CounterValue,
+		float64(float64(atomic.LoadUint64(&globalCurrBW)) / float64(1024)),
+	)
+	// Reset counters once reported
+	atomic.StoreUint64(&globalCurrIOCount, 0)
+	atomic.StoreUint64(&globalCurrBW, 0)
+	
 	// Always expose network stats
 
 	// Network Sent/Received Bytes

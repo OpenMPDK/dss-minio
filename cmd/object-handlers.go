@@ -401,6 +401,10 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 	  defer gr.Close()
 
 	  objInfo = gr.ObjInfo
+	  if (atomic.LoadUint32(&globalCollectMetrics) == 1) {
+		atomic.AddUint64(&globalCurrBW, uint64(objInfo.Size))
+		atomic.AddUint64(&globalCurrIOCount, 1)
+	  }
         }
 
 	if objectAPI.IsEncryptionSupported() {
@@ -1417,6 +1421,11 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
+	}
+
+	if atomic.LoadUint32(&globalCollectMetrics) == 1 {
+		atomic.AddUint64(&globalCurrBW, uint64(objInfo.Size))
+		atomic.AddUint64(&globalCurrIOCount, 1)
 	}
 
 	etag := objInfo.ETag
