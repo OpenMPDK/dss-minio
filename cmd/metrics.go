@@ -85,7 +85,7 @@ func (c *minioCollector) Collect(ch chan<- prometheus.Metric) {
 			"Current BW of this Minio instance (KiB/s)",
 			nil, nil),
 		prometheus.CounterValue,
-		float64(float64(atomic.LoadUint64(&globalCurrBW)) / float64(1024)),
+		float64(atomic.LoadUint64(&globalCurrBW)),
 	)
 	// Reset counters once reported
 	atomic.StoreUint64(&globalCurrIOCount, 0)
