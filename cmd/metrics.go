@@ -82,7 +82,7 @@ func (c *minioCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc(
 			prometheus.BuildFQName("minio", "metrics", "bw"),
-			"Current BW of this Minio instance (KiB/s)",
+			"Current BW of this Minio instance",
 			nil, nil),
 		prometheus.CounterValue,
 		float64(atomic.LoadUint64(&globalCurrBW)),
