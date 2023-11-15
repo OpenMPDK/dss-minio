@@ -41,7 +41,6 @@ var (
 // Couldn't see any difference in functionality
 func init() {
 	prometheus.MustRegister(httpRequestsDuration)
-	//prometheus.MustRegister(newMinioCollector())
 }
 
 // newMinioCollector describes the collector

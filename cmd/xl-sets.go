@@ -350,21 +350,21 @@ func (s *xlSets) UpdateCountersToDisk() {
 }
 // BW/IOPS reporting thread
 func metricsReporting() {
-	fmt.Println("### Metrics reporting thread started")
-	for {
-		// Need to use atomic operation for setting and checking whether to collect
-		// It's probably fine to not use atomic within this thread, but IO threads will need it accurately determine whether to record
-		// Go 1.12 doesn't have atomic structs (Go 1.19 introduced atomic structs)
+    fmt.Println("### Metrics reporting thread started")
+    for {
+        // Need to use atomic operation for setting and checking whether to collect
+        // It's probably fine to not use atomic within this thread, but IO threads will need it accurately determine whether to record
+        // Go 1.12 doesn't have atomic structs (Go 1.19 introduced atomic structs)
 
-		// Signal to start recording IO, then sleep for 1s and report the counters
-		start := <-globalMetricsChan
-		atomic.StoreUint32(&globalCollectMetrics, start)
-		
-		time.Sleep(1 * time.Second)
-		atomic.StoreUint32(&globalCollectMetrics, 0)
-		// Signal to stop after collecting for 1s
-		globalMetricsChan <- 0
-	}
+        // Signal to start recording IO, then sleep for 1s and report the counters
+        start := <-globalMetricsChan
+        atomic.StoreUint32(&globalCollectMetrics, start)
+        
+        time.Sleep(1 * time.Second)
+        atomic.StoreUint32(&globalCollectMetrics, 0)
+        // Signal to stop after collecting for 1s
+        globalMetricsChan <- 0
+    }
 }
 
 
@@ -642,7 +642,7 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           go s.UpdateCountersToDisk()
         }
 
-		go metricsReporting()
+        go metricsReporting()
 
         globalSC_read = false
         if os.Getenv("MINIO_ENABLE_SC_READ") != "" {

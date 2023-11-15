@@ -191,10 +191,10 @@ var (
         globalTotalGetIOCount uint64
         globalIsStopping bool = false
         gIsRDDQHandleSet bool = false
-		globalCurrIOCount uint64
-		globalCurrBW uint64
-		globalMetricsChan = make(chan uint32)
-		globalCollectMetrics uint32
+        globalCurrIOCount uint64
+        globalCurrBW uint64
+        globalMetricsChan = make(chan uint32)
+        globalCollectMetrics uint32
 
 	// Global server's network statistics
 	globalConnStats = newConnStats()
