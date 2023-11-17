@@ -43,7 +43,6 @@ SCRIPT_DIR=$(readlink -f "$(dirname "$0")")
 GIT_DIR=$(realpath "$SCRIPT_DIR/..")
 DSS_SDK_DIR="$GIT_DIR/dss-sdk"
 DSS_ECOSYSTEM_DIR="$GIT_DIR/dss-ecosystem"
-DSS_S3BENCHMARK_DIR="$DSS_ECOSYSTEM_DIR/dss_s3benchmark"
 LIB_DIR="$DSS_SDK_DIR/host_out/lib"
 INCLUDE_DIR="$DSS_SDK_DIR/host/include"
 
@@ -57,7 +56,6 @@ MINIODIR='minio'
 
 # Set MinIO Client Variables
 MCURL="https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2019-10-09T22-54-57Z"
-S3BENCHPATH="$DSS_S3BENCHMARK_DIR/s3-benchmark"
 
 # Verify dss-sdk dir exists
 if [ ! -d "$DSS_SDK_DIR" ];
@@ -83,15 +81,9 @@ then
     die "dss-ecosystem dir does not exist. Clone dss-ecosystem repo to $DSS_ECOSYSTEM_DIR first."
 fi
 
-# Verify dss_s3benchmark dir exists
-if [ ! -d "$DSS_S3BENCHMARK_DIR" ];
-then
-    die "dss-s3benchmark dir does not exist. Clone dss-ecosystem repo to $DSS_ECOSYSTEM_DIR first."
-fi
-
 # Remove existing artifacts
 pushd "$SCRIPT_DIR"
-    rm -f dss-minio-bin-*.tgz minio mc s3-benchmark
+    rm -f dss-minio-bin-*.tgz minio mc
 popd
 
 echo 'Downloading build deps'
@@ -137,11 +129,10 @@ popd
 pushd "$SCRIPT_DIR"
     # Download MinIO client binaries
     wget -O mc "$MCURL"
-    cp "$S3BENCHPATH" .
 
     # Set executable
-    chmod +x mc s3-benchmark
+    chmod +x mc
 
     # Create release tarball
-    tar czvf "dss-minio-bin-$RELEASESTRING.tgz" minio mc s3-benchmark
+    tar czvf "dss-minio-bin-$RELEASESTRING.tgz" minio mc
 popd
