@@ -357,13 +357,24 @@ func metricsReporting() {
         // Go 1.12 doesn't have atomic structs (Go 1.19 introduced atomic structs)
 
         // Signal to start recording IO, then sleep for 1s and report the counters
-        start := <-globalMetricsChan
-        atomic.StoreUint32(&globalCollectMetrics, start)
+        atomic.StoreUint32(&globalCollectMetrics, 1)
         
         time.Sleep(1 * time.Second)
         atomic.StoreUint32(&globalCollectMetrics, 0)
         // Signal to stop after collecting for 1s
-        globalMetricsChan <- 0
+
+        // Record counters to a variable for Prometheus to report
+        atomic.StoreUint64(&globalReportPutIOPS, atomic.LoadUint64(&globalCurrPutIOPS))
+        atomic.StoreUint64(&globalReportGetIOPS, atomic.LoadUint64(&globalCurrGetIOPS))
+        atomic.StoreUint64(&globalReportPutBW, atomic.LoadUint64(&globalCurrPutBW))
+        atomic.StoreUint64(&globalReportGetBW, atomic.LoadUint64(&globalCurrGetBW))
+        atomic.StoreUint64(&globalReportDel, atomic.LoadUint64(&globalCurrDel))
+        // Reset counters after recording the last second of metrics
+        atomic.StoreUint64(&globalCurrPutIOPS, 0)
+        atomic.StoreUint64(&globalCurrGetIOPS, 0)
+        atomic.StoreUint64(&globalCurrPutBW, 0)
+        atomic.StoreUint64(&globalCurrGetBW, 0)
+        atomic.StoreUint64(&globalCurrDel, 0)
     }
 }
 
@@ -642,7 +653,10 @@ func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesP
           go s.UpdateCountersToDisk()
         }
 
-        go metricsReporting()
+        // Only record metrics if MINIO_REPORT_METRICS env variable is set
+        if (report_minio_metrics) {
+            go metricsReporting()
+        }
 
         globalSC_read = false
         if os.Getenv("MINIO_ENABLE_SC_READ") != "" {

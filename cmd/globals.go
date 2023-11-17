@@ -191,9 +191,21 @@ var (
         globalTotalGetIOCount uint64
         globalIsStopping bool = false
         gIsRDDQHandleSet bool = false
-        globalCurrIOCount uint64
-        globalCurrBW uint64
-        globalMetricsChan = make(chan uint32)
+
+        report_minio_metrics bool = os.Getenv("MINIO_REPORT_METRICS") != ""
+        // Separate counters for live collecting and actual reported
+        // This is to avoid low numbers being reported if Collect is called while metrics thread is recording,
+        // report counters will store the last completed second of metrics
+        globalCurrPutIOPS uint64
+        globalCurrGetIOPS uint64
+        globalCurrPutBW uint64
+        globalCurrGetBW uint64
+        globalCurrDel uint64
+        globalReportPutIOPS uint64
+        globalReportGetIOPS uint64
+        globalReportPutBW uint64
+        globalReportGetBW uint64
+        globalReportDel uint64
         globalCollectMetrics uint32
 
 	// Global server's network statistics

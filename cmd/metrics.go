@@ -65,30 +65,56 @@ func (c *minioCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *minioCollector) Collect(ch chan<- prometheus.Metric) {
+    // Only report in Prometheus if MINIO_REPORT_METRICS is set
+    if report_minio_metrics {
+        ch <- prometheus.MustNewConstMetric(
+            prometheus.NewDesc(
+                prometheus.BuildFQName("minio", "metrics", "put_iops"),
+                "Current PUT IOPS of this Minio instance",
+                nil, nil),
+            prometheus.CounterValue,
+            float64(atomic.LoadUint64(&globalReportPutIOPS)),
+        )
+        
+        ch <- prometheus.MustNewConstMetric(
+            prometheus.NewDesc(
+                prometheus.BuildFQName("minio", "metrics", "get_iops"),
+                "Current GET IOPS of this Minio instance",
+                nil, nil),
+            prometheus.CounterValue,
+            float64(atomic.LoadUint64(&globalReportGetIOPS)),
+        )
+    
+        ch <- prometheus.MustNewConstMetric(
+            prometheus.NewDesc(
+                prometheus.BuildFQName("minio", "metrics", "del_iops"),
+                "Current DEL IOPS of this Minio instance",
+                nil, nil),
+            prometheus.CounterValue,
+            float64(atomic.LoadUint64(&globalReportDel)),
+        )
+    
+        ch <- prometheus.MustNewConstMetric(
+            prometheus.NewDesc(
+                prometheus.BuildFQName("minio", "metrics", "put_bw"),
+                "Current PUT BW of this Minio instance",
+                nil, nil),
+            prometheus.CounterValue,
+            float64(atomic.LoadUint64(&globalReportPutBW)),
+        )
+    
+        ch <- prometheus.MustNewConstMetric(
+            prometheus.NewDesc(
+                prometheus.BuildFQName("minio", "metrics", "get_bw"),
+                "Current GET BW of this Minio instance",
+                nil, nil),
+            prometheus.CounterValue,
+            float64(atomic.LoadUint64(&globalReportGetBW)),
+        )
+    }
+	
 
-	globalMetricsChan<- 1
-	// Waiting to make sure metrics thread finishes before
-	<-globalMetricsChan
-	ch <- prometheus.MustNewConstMetric(
-		prometheus.NewDesc(
-			prometheus.BuildFQName("minio", "metrics", "iops"),
-			"Current IOPS of this Minio instance",
-			nil, nil),
-		prometheus.CounterValue,
-		float64(atomic.LoadUint64(&globalCurrIOCount)),
-	)
 
-	ch <- prometheus.MustNewConstMetric(
-		prometheus.NewDesc(
-			prometheus.BuildFQName("minio", "metrics", "bw"),
-			"Current BW of this Minio instance",
-			nil, nil),
-		prometheus.CounterValue,
-		float64(atomic.LoadUint64(&globalCurrBW)),
-	)
-	// Reset counters once reported
-	atomic.StoreUint64(&globalCurrIOCount, 0)
-	atomic.StoreUint64(&globalCurrBW, 0)
 	
 	// Always expose network stats
 
