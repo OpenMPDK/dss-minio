@@ -223,6 +223,11 @@ func (api objectAPIHandlers) SelectObjectContentHandler(w http.ResponseWriter, r
 	s3Select.Evaluate(w)
 	s3Select.Close()
 
+    if (atomic.LoadUint32(&globalCollectMetrics) == 1) {
+        atomic.AddUint64(&globalCurrGetBW, uint64(objInfo.Size))
+        atomic.AddUint64(&globalCurrGetIOPS, 1)
+    }
+
 	// Get host and port from Request.RemoteAddr.
 	host, port, err := net.SplitHostPort(handlers.GetSourceIP(r))
 	if err != nil {
@@ -401,6 +406,10 @@ func (api objectAPIHandlers) GetObjectHandler(w http.ResponseWriter, r *http.Req
 	  defer gr.Close()
 
 	  objInfo = gr.ObjInfo
+            if (atomic.LoadUint32(&globalCollectMetrics) == 1) {
+                atomic.AddUint64(&globalCurrGetBW, uint64(objInfo.Size))
+                atomic.AddUint64(&globalCurrGetIOPS, 1)
+            }
         }
 
 	if objectAPI.IsEncryptionSupported() {
@@ -706,6 +715,11 @@ func (api objectAPIHandlers) HeadObjectHandler(w http.ResponseWriter, r *http.Re
         if (track_minio_stats) {
           atomic.AddUint64(&globalTotalHeadObjQD, ^uint64(0))
         }
+    //
+    if (atomic.LoadUint32(&globalCollectMetrics) == 1) {
+        atomic.AddUint64(&globalCurrGetBW, uint64(objInfo.Size))
+        atomic.AddUint64(&globalCurrGetIOPS, 1)
+    }
 	// Notify object accessed via a HEAD request.
 	sendEvent(eventArgs{
 		EventName:    event.ObjectAccessedHead,
@@ -1181,6 +1195,11 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 		objInfo.Size = actualSize
 	}
 
+    if atomic.LoadUint32(&globalCollectMetrics) == 1 {
+        atomic.AddUint64(&globalCurrPutBW, uint64(objInfo.Size))
+        atomic.AddUint64(&globalCurrPutIOPS, 1)
+    }
+
 	// Notify object created event.
 	sendEvent(eventArgs{
 		EventName:    event.ObjectCreatedCopy,
@@ -1418,6 +1437,11 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
 	}
+
+    if atomic.LoadUint32(&globalCollectMetrics) == 1 {
+        atomic.AddUint64(&globalCurrPutBW, uint64(objInfo.Size))
+        atomic.AddUint64(&globalCurrPutIOPS, 1)
+    }
 
 	etag := objInfo.ETag
 	if objInfo.IsCompressed() {
@@ -2562,5 +2586,10 @@ func (api objectAPIHandlers) DeleteObjectHandler(w http.ResponseWriter, r *http.
 		}
 		// Ignore delete object errors while replying to client, since we are suppposed to reply only 204.
 	}
+
+    if atomic.LoadUint32(&globalCollectMetrics) == 1 {
+        atomic.AddUint64(&globalCurrDel, 1)
+    }
+
 	writeSuccessNoContent(w)
 }
